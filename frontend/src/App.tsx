@@ -2,28 +2,25 @@ import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search } from "lucide-react";
 
 type KnowledgeDocument = {
-  id: string;
-  filename: string;
-  size: number;
-  status: string;
-  character_count: number;
-  chunk_count: number;
-  embedded_chunk_count: number;
+  id: string; filename: string; size: number; status: string;
+  character_count: number; chunk_count: number; embedded_chunk_count: number;
 };
 type SearchResult = {
-  chunk_id: string;
-  document_id: string;
-  filename: string;
-  chunk_index: number;
-  content: string;
-  score: number;
+  chunk_id: string; document_id: string; filename: string;
+  chunk_index: number; content: string; score: number;
+  keyword_rank?: number; vector_rank?: number;
 };
+type SearchMode = "keyword" | "vector" | "hybrid";
 type ComparisonResult = {
-  mode: "keyword" | "vector";
-  results: SearchResult[];
-  error?: string;
+  mode: SearchMode; results: SearchResult[]; error?: string; fallback?: string;
 };
 const formatSize = (size: number) => size < 1024 * 1024 ? (size / 1024).toFixed(1) + " KB" : (size / 1024 / 1024).toFixed(1) + " MB";
+const modeTitle: Record<SearchMode, string> = {
+  keyword: "关键词检索", vector: "向量语义检索", hybrid: "混合检索",
+};
+const modeSubtitle: Record<SearchMode, string> = {
+  keyword: "Keyword Search", vector: "Vector Search", hybrid: "Hybrid · RRF",
+};
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
@@ -70,17 +67,19 @@ export default function App() {
     event.preventDefault();
     if (!query.trim()) return;
     setSearching(true); setError(""); setComparison([]);
-    const modes: Array<"keyword" | "vector"> = ["keyword", "vector"];
+    const modes: SearchMode[] = ["keyword", "vector", "hybrid"];
     const outcomes = await Promise.all(modes.map(async (mode): Promise<ComparisonResult> => {
       try {
         const response = await fetch("/api/search", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: query.trim(), limit: 5, mode }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "检索失败");
-        return { mode, results: result.results as SearchResult[] };
+        return {
+          mode, results: result.results as SearchResult[],
+          fallback: result.mode === "keyword_fallback" ? result.fallback_reason : undefined,
+        };
       } catch (searchError) {
         return { mode, results: [], error: searchError instanceof Error ? searchError.message : "检索失败，请重试。" };
       }
@@ -91,15 +90,19 @@ export default function App() {
 
   const renderResults = (item: ComparisonResult) => <div className="comparison-column" key={item.mode}>
     <div className="comparison-heading">
-      <div><strong>{item.mode === "keyword" ? "关键词检索" : "向量语义检索"}</strong><span>{item.mode === "keyword" ? "Keyword Search" : "Vector Search"}</span></div>
+      <div><strong>{modeTitle[item.mode]}</strong><span>{modeSubtitle[item.mode]}</span></div>
       <span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span>
     </div>
     {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> :
-      item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
-      <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
-        <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · 分数 {result.score.toFixed(3)}</span></div>
-        <p>{result.content}</p>
-      </article>)}</div>}
+      <>
+        {item.fallback && <div className="comparison-fallback">{item.fallback}</div>}
+        {item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
+          <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
+            <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · {item.mode === "hybrid" ? "RRF " : "分数 "}{result.score.toFixed(4)}</span></div>
+            {item.mode === "hybrid" && <div className="rank-meta">关键词排名：{result.keyword_rank ?? "—"} · 向量排名：{result.vector_rank ?? "—"}</div>}
+            <p>{result.content}</p>
+          </article>)}</div>}
+      </>}
   </div>;
 
   return <main className="shell">
@@ -116,7 +119,7 @@ export default function App() {
         <div className="welcome-icon"><Sparkles size={22} /></div>
         <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
         <h2>让企业知识，随问随答</h2>
-        <p className="subtitle">上传企业文档，系统自动提取文本、切分知识片段，并支持基于知识库的检索。</p>
+        <p className="subtitle">上传企业文档，系统自动提取文本、切分知识片段，并支持多策略知识检索。</p>
         <input ref={inputRef} className="hidden-input" type="file" accept=".pdf,.docx,.txt,.md" onChange={handleUpload} />
         <button className="upload-box" onClick={() => inputRef.current?.click()} disabled={uploading}>
           {uploading ? <Loader2 className="spin" size={20} /> : <Upload size={20} />}
@@ -127,14 +130,14 @@ export default function App() {
         {error && <div className="notice error"><AlertCircle size={16} />{error}</div>}
       </section>
       <section className="search-section">
-        <div className="section-heading"><div><h3>检索效果对比</h3><p>输入一次问题，同时查看关键词检索与向量语义检索的 Top 5 结果</p></div></div>
+        <div className="section-heading"><div><h3>三种检索策略对比</h3><p>相同问题并行检索：关键词、向量语义，以及 RRF 融合后的混合排名</p></div></div>
         <form className="search-form" onSubmit={handleSearch}>
           <Search size={18} />
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如：出差回来后，多久之内要交票据？" />
           <button type="submit" disabled={searching || !query.trim()}>{searching ? "对比中…" : "同时检索"}</button>
         </form>
         {comparison.length > 0 && <div className="comparison-grid">{comparison.map(renderResults)}</div>}
-        {comparison.length === 0 && <p className="comparison-hint">两种模式使用相同问题和知识库。向量检索需要先配置 Embedding API，并上传已生成向量的文档。</p>}
+        {comparison.length === 0 && <p className="comparison-hint">向量和混合检索需要先配置 Embedding API，并上传已生成向量的文档；否则混合检索会明确降级为关键词检索。</p>}
       </section>
       <section className="documents-section">
         <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
@@ -145,7 +148,7 @@ export default function App() {
             <span className="ready"><CheckCircle2 size={14} /> {document.embedded_chunk_count > 0 ? "向量已索引" : "文本已分块"}</span>
           </article>)}</div>}
       </section>
-      <footer className="page-footer"><ShieldCheck size={14} /> 已支持文档解析、文本分块和检索；配置 Embedding API 后启用向量语义检索。</footer>
+      <footer className="page-footer"><ShieldCheck size={14} /> 混合检索使用 Reciprocal Rank Fusion 融合关键词与向量的独立排名。</footer>
     </section>
   </main>;
 }
