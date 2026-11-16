@@ -62,21 +62,21 @@ def initialize_storage() -> None:
 def _extract_text(path: Path, extension: str) -> str:
     if extension == ".pdf":
         reader = PdfReader(str(path))
-        return "\\n".join(page.extract_text() or "" for page in reader.pages)
+        return "\n".join(page.extract_text() or "" for page in reader.pages)
     if extension == ".docx":
         document = DocxDocument(str(path))
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
         for table in document.tables:
             for row in table.rows:
                 paragraphs.append(" | ".join(cell.text for cell in row.cells))
-        return "\\n".join(paragraphs)
+        return "\n".join(paragraphs)
     return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _clean_text(value: str) -> str:
-    value = value.replace("\\x00", "")
-    value = re.sub(r"[ \\t]+", " ", value)
-    value = re.sub(r"\\n{3,}", "\\n\\n", value)
+    value = value.replace("\x00", "")
+    value = re.sub(r"[ \t]+", " ", value)
+    value = re.sub(r"\n{3,}", "\n\n", value)
     return value.strip()
 
 
