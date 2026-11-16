@@ -2,8 +2,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
-from app.services.document_service import get_document_text, initialize_storage, list_documents, upload_document
+from app.services.document_service import (
+    get_document_text,
+    initialize_storage,
+    list_documents,
+    search_chunks,
+    upload_document,
+)
 
 
 @asynccontextmanager
@@ -12,8 +19,24 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="Enterprise Knowledge Agent API", version="0.2.0", description="API for an enterprise knowledge-base assistant.", lifespan=lifespan)
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app = FastAPI(
+    title="Enterprise Knowledge Agent API",
+    version="0.3.0",
+    description="API for document ingestion, chunking and knowledge retrieval.",
+    lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=2000)
+    limit: int = Field(default=5, ge=1, le=20)
 
 
 @app.get("/health", tags=["system"])
@@ -44,3 +67,11 @@ async def document_text(document_id: str) -> dict:
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
     return document
+
+
+@app.post("/search", tags=["retrieval"])
+async def search(request: SearchRequest) -> dict:
+    try:
+        return await search_chunks(request.query, request.limit)
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
