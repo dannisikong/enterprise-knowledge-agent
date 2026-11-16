@@ -1,6 +1,6 @@
 # Enterprise Knowledge Agent
 
-企业知识库助手 Demo：从企业文档上传、解析、分块，到知识片段检索的端到端应用。
+企业知识库助手 Demo：从企业文档上传、解析、分块，到关键词、向量和混合检索的端到端应用。
 
 ## Tech stack
 
@@ -10,6 +10,7 @@
 - Chunking: overlapping character chunks with paragraph/sentence boundary preference
 - Embeddings: OpenAI-compatible Embeddings API (optional)
 - Local persistence: SQLite
+- Hybrid ranking: Reciprocal Rank Fusion (RRF)
 
 ## Current capabilities
 
@@ -17,8 +18,9 @@
 2. Extract readable text and persist original files locally.
 3. Split extracted text into chunks (default 800 characters, 120-character overlap).
 4. Optionally generate embeddings and persist vectors with each chunk.
-5. Search chunks through vector cosine similarity when embeddings are available; otherwise use keyword matching. The search API also supports forcing `keyword` or `vector` mode for comparison.
-6. Browse document metadata, chunk counts and embedding status in the UI.
+5. Compare keyword retrieval, vector cosine similarity and hybrid retrieval.
+6. Hybrid retrieval independently ranks keyword/vector results, then fuses the top 50 from each branch with RRF. It does not add incomparable raw scores.
+7. Browse document metadata, chunk counts and embedding status in the UI.
 
 ## Run locally
 
@@ -70,34 +72,43 @@ docker compose up --build
 - `GET /documents/{id}/text` — inspect extracted text
 - `POST /search` — retrieve relevant chunks
 
-Example search request:
+Example hybrid request:
 
 ```json
 {
   "query": "公司的报销政策是什么？",
-  "limit": 5
+  "limit": 5,
+  "mode": "hybrid"
 }
 ```
+
+Supported modes:
+- `keyword`: lightweight token-presence matching; not BM25.
+- `vector`: embedding cosine similarity; requires query and document vectors.
+- `hybrid`: RRF fusion of keyword and vector rankings; falls back to keyword results when vectors are unavailable.
+- `auto`: same hybrid-first behavior and keyword fallback as `hybrid`.
 
 ## Retrieval experiment
 
 - Sample document: `samples/employee-handbook.md`
 - Step-by-step comparison of keyword and vector retrieval: [`docs/retrieval-experiment.md`](docs/retrieval-experiment.md)
-- `POST /search` accepts `mode: "auto" | "keyword" | "vector"`; `auto` is the default. Explicit `vector` mode returns an error if query/document embeddings are unavailable.
+- The UI compares all three strategies for the same query.
+- RRF uses a rank constant of 60 and merges duplicate chunks by `chunk_id`.
 
 ## Current limitations
 
 - This is a local-development demo. Do not upload confidential company documents.
 - SQLite and local disk are used for simplicity; PostgreSQL/pgvector and object storage are planned.
 - Existing chunks are not automatically re-embedded when the embedding model changes.
-- Keyword matching is a basic fallback, not a production-grade Chinese full-text search engine.
+- Keyword matching is a simple token-presence baseline, not BM25 or a production-grade Chinese full-text search engine. It does not perform robust Chinese word segmentation.
+- RRF improves rank fusion but cannot compensate for poor retrieval candidates; the top 50 from each branch are considered.
 - Authentication, tenant isolation, malware scanning, background jobs, OCR, reranking, answer generation and evaluation are not implemented yet.
 
 ## Roadmap
 
 1. ~~Document ingestion and parsing~~
 2. ~~Chunking and embedding foundation~~
-3. PostgreSQL + pgvector and background indexing
-4. Hybrid retrieval and reranking
+3. ~~Keyword/vector comparison and hybrid RRF retrieval~~
+4. Reranking and retrieval evaluation
 5. LangGraph answer workflow with source citations
-6. Evaluation, observability, authentication and deployment
+6. Authentication, tenant isolation, observability and deployment
