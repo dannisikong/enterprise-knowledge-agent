@@ -6,7 +6,7 @@ from typing import Any
 
 def keyword_score(query: str, content: str) -> float:
     """A lightweight token-presence score; not BM25 or a Chinese segmenter."""
-    terms = {term.lower() for term in re.findall(r"[\\w\\u4e00-\\u9fff]+", query) if len(term) > 1}
+    terms = {term.lower() for term in re.findall(r"[\w\u4e00-\u9fff]+", query) if len(term) > 1}
     if not terms:
         return 0.0
     target = content.lower()
