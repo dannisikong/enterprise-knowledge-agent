@@ -79,3 +79,8 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .comparison-column .result-top { align-items: flex-start; flex-direction: column; gap: 5px; }
 .comparison-column .result-top span { white-space: normal; }
 @media (max-width: 900px) { .comparison-grid { grid-template-columns: 1fr; } }
+
+.comparison-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.rank-meta { margin-top: 7px; color: #a99af1; font-size: 10px; }
+.comparison-fallback { margin-top: 9px; padding: 9px 11px; border: 1px solid #6b5734; border-radius: 8px; color: #e8c98f; background: #302a20; font-size: 10px; line-height: 1.6; }
+@media (max-width: 1100px) { .comparison-grid { grid-template-columns: 1fr; } }
