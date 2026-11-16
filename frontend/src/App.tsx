@@ -1,55 +1,81 @@
-import { useEffect, useState } from "react";
-import { Bot, FileText, Search, ShieldCheck, Sparkles } from "lucide-react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle } from "lucide-react";
 
-type Health = { status: string; service: string };
+type KnowledgeDocument = { id: string; filename: string; size: number; status: string; character_count: number };
+const formatSize = (size: number) => size < 1024 * 1024 ? (size / 1024).toFixed(1) + " KB" : (size / 1024 / 1024).toFixed(1) + " MB";
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
+  const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const loadDocuments = async () => {
+    const response = await fetch("/api/documents");
+    if (!response.ok) throw new Error("无法加载文档列表");
+    setDocuments(await response.json() as KnowledgeDocument[]);
+  };
 
   useEffect(() => {
-    fetch("/api/health")
-      .then((response) => {
-        if (!response.ok) throw new Error("API unavailable");
-        return response.json() as Promise<Health>;
-      })
-      .then(() => setHealth("ok"))
-      .catch(() => setHealth("error"));
+    fetch("/api/health").then((response) => {
+      if (!response.ok) throw new Error("API unavailable");
+      setHealth("ok");
+      return loadDocuments();
+    }).catch(() => setHealth("error"));
   }, []);
 
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark"><Bot size={21} /></span><span>KnowFlow</span></div>
-        <div className="workspace-label">工作空间</div>
-        <button className="nav-item active"><Sparkles size={17} /> 智能问答</button>
-        <button className="nav-item"><FileText size={17} /> 知识库</button>
-        <div className="sidebar-bottom">
-          <div className="status-dot" />
-          <span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span>
-        </div>
-      </aside>
+  const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUploading(true); setMessage(""); setError("");
+    const body = new FormData(); body.append("file", file);
+    try {
+      const response = await fetch("/api/documents", { method: "POST", body });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "上传失败");
+      setMessage("已完成解析：" + result.filename + "，提取 " + result.character_count.toLocaleString() + " 个字符");
+      await loadDocuments();
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "上传失败，请重试。");
+    } finally { setUploading(false); event.target.value = ""; }
+  };
 
-      <section className="main-panel">
-        <header className="topbar">
-          <div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div>
-          <div className="secure"><ShieldCheck size={16} /> 企业知识安全空间</div>
-        </header>
-
-        <section className="welcome">
-          <div className="welcome-icon"><Sparkles size={22} /></div>
-          <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
-          <h2>你好，今天有什么可以帮你？</h2>
-          <p className="subtitle">基于企业内部知识，快速查找资料、理解制度并获得有依据的回答。</p>
-          <div className="search-box"><Search size={19} /><span>例如：公司的差旅报销标准是什么？</span><kbd>Enter</kbd></div>
-          <div className="hint">当前为项目初始界面，知识检索与问答能力将在后续里程碑接入。</div>
-        </section>
-
-        <section className="capabilities">
-          <article><FileText size={19} /><h3>知识库管理</h3><p>集中管理企业文档与知识来源</p></article>
-          <article><Search size={19} /><h3>精准检索</h3><p>从相关资料中定位可信信息</p></article>
-          <article><ShieldCheck size={19} /><h3>答案可溯源</h3><p>回答附带来源，便于核验</p></article>
-        </section>
+  return <main className="shell">
+    <aside className="sidebar">
+      <div className="brand"><span className="brand-mark"><Bot size={21} /></span><span>KnowFlow</span></div>
+      <div className="workspace-label">工作空间</div>
+      <button className="nav-item active"><Sparkles size={17} /> 智能问答</button>
+      <button className="nav-item"><FileText size={17} /> 知识库</button>
+      <div className="sidebar-bottom"><div className={"status-dot " + (health === "ok" ? "online" : "")} /><span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span></div>
+    </aside>
+    <section className="main-panel">
+      <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="secure"><ShieldCheck size={16} /> 企业知识安全空间</div></header>
+      <section className="welcome">
+        <div className="welcome-icon"><Sparkles size={22} /></div>
+        <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
+        <h2>让企业知识，随问随答</h2>
+        <p className="subtitle">上传企业文档，系统会自动提取文本并建立知识资料库，为后续智能检索做好准备。</p>
+        <input ref={inputRef} className="hidden-input" type="file" accept=".pdf,.docx,.txt,.md" onChange={handleUpload} />
+        <button className="upload-box" onClick={() => inputRef.current?.click()} disabled={uploading}>
+          {uploading ? <Loader2 className="spin" size={20} /> : <Upload size={20} />}
+          <span>{uploading ? "正在上传并解析…" : "选择文件，上传到知识库"}</span>
+          <small>支持 PDF、DOCX、TXT、Markdown，单个文件最大 10 MB</small>
+        </button>
+        {message && <div className="notice success"><CheckCircle2 size={16} />{message}</div>}
+        {error && <div className="notice error"><AlertCircle size={16} />{error}</div>}
       </section>
-    </main>
-  );
+      <section className="documents-section">
+        <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
+        {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
+          <div className="document-list">{documents.map((document) => <article className="document-row" key={document.id}>
+            <div className="file-icon"><FileText size={19} /></div>
+            <div className="file-info"><strong>{document.filename}</strong><span>{formatSize(document.size)} · {document.character_count.toLocaleString()} 字符</span></div>
+            <span className="ready"><CheckCircle2 size={14} /> 已解析</span>
+          </article>)}</div>}
+      </section>
+      <footer className="page-footer"><ShieldCheck size={14} /> 当前版本完成文档上传与文本提取；向量检索和智能问答将在下一阶段接入。</footer>
+    </section>
+  </main>;
 }
