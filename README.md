@@ -17,7 +17,7 @@
 2. Extract readable text and persist original files locally.
 3. Split extracted text into chunks (default 800 characters, 120-character overlap).
 4. Optionally generate embeddings and persist vectors with each chunk.
-5. Search chunks through vector cosine similarity when embeddings are available; otherwise use keyword matching.
+5. Search chunks through vector cosine similarity when embeddings are available; otherwise use keyword matching. The search API also supports forcing `keyword` or `vector` mode for comparison.
 6. Browse document metadata, chunk counts and embedding status in the UI.
 
 ## Run locally
@@ -78,6 +78,12 @@ Example search request:
   "limit": 5
 }
 ```
+
+## Retrieval experiment
+
+- Sample document: `samples/employee-handbook.md`
+- Step-by-step comparison of keyword and vector retrieval: [`docs/retrieval-experiment.md`](docs/retrieval-experiment.md)
+- `POST /search` accepts `mode: "auto" | "keyword" | "vector"`; `auto` is the default. Explicit `vector` mode returns an error if query/document embeddings are unavailable.
 
 ## Current limitations
 
