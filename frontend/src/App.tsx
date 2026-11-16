@@ -18,6 +18,11 @@ type SearchResult = {
   content: string;
   score: number;
 };
+type ComparisonResult = {
+  mode: "keyword" | "vector";
+  results: SearchResult[];
+  error?: string;
+};
 const formatSize = (size: number) => size < 1024 * 1024 ? (size / 1024).toFixed(1) + " KB" : (size / 1024 / 1024).toFixed(1) + " MB";
 
 export default function App() {
@@ -26,8 +31,7 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [searchMode, setSearchMode] = useState("");
+  const [comparison, setComparison] = useState<ComparisonResult[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -65,21 +69,38 @@ export default function App() {
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!query.trim()) return;
-    setSearching(true); setError(""); setSearchResults([]);
-    try {
-      const response = await fetch("/api/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query, limit: 5 }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || "检索失败");
-      setSearchResults(result.results as SearchResult[]);
-      setSearchMode(result.mode);
-    } catch (searchError) {
-      setError(searchError instanceof Error ? searchError.message : "检索失败，请重试。");
-    } finally { setSearching(false); }
+    setSearching(true); setError(""); setComparison([]);
+    const modes: Array<"keyword" | "vector"> = ["keyword", "vector"];
+    const outcomes = await Promise.all(modes.map(async (mode): Promise<ComparisonResult> => {
+      try {
+        const response = await fetch("/api/search", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: query.trim(), limit: 5, mode }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.detail || "检索失败");
+        return { mode, results: result.results as SearchResult[] };
+      } catch (searchError) {
+        return { mode, results: [], error: searchError instanceof Error ? searchError.message : "检索失败，请重试。" };
+      }
+    }));
+    setComparison(outcomes);
+    setSearching(false);
   };
+
+  const renderResults = (item: ComparisonResult) => <div className="comparison-column" key={item.mode}>
+    <div className="comparison-heading">
+      <div><strong>{item.mode === "keyword" ? "关键词检索" : "向量语义检索"}</strong><span>{item.mode === "keyword" ? "Keyword Search" : "Vector Search"}</span></div>
+      <span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span>
+    </div>
+    {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> :
+      item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
+      <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
+        <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · 分数 {result.score.toFixed(3)}</span></div>
+        <p>{result.content}</p>
+      </article>)}</div>}
+  </div>;
 
   return <main className="shell">
     <aside className="sidebar">
@@ -106,25 +127,21 @@ export default function App() {
         {error && <div className="notice error"><AlertCircle size={16} />{error}</div>}
       </section>
       <section className="search-section">
-        <div className="section-heading"><div><h3>知识检索</h3><p>在已上传文档中查找相关片段</p></div></div>
+        <div className="section-heading"><div><h3>检索效果对比</h3><p>输入一次问题，同时查看关键词检索与向量语义检索的 Top 5 结果</p></div></div>
         <form className="search-form" onSubmit={handleSearch}>
           <Search size={18} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入问题或关键词，例如：公司的报销政策是什么？" />
-          <button type="submit" disabled={searching || !query.trim()}>{searching ? "检索中…" : "检索"}</button>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如：出差回来后，多久之内要交票据？" />
+          <button type="submit" disabled={searching || !query.trim()}>{searching ? "对比中…" : "同时检索"}</button>
         </form>
-        {searchMode && <p className="search-meta">本次检索方式：{searchMode === "vector" ? "向量语义检索" : "关键词检索"} · 返回 {searchResults.length} 条结果</p>}
-        {searchMode && searchResults.length === 0 && <div className="empty-state compact">没有找到匹配内容，试试调整问题或先上传更多文档。</div>}
-        {searchResults.length > 0 && <div className="result-list">{searchResults.map((result) => <article className="result-card" key={result.chunk_id}>
-          <div className="result-top"><strong>{result.filename}</strong><span>片段 #{result.chunk_index + 1} · 相关度 {result.score.toFixed(3)}</span></div>
-          <p>{result.content}</p>
-        </article>)}</div>}
+        {comparison.length > 0 && <div className="comparison-grid">{comparison.map(renderResults)}</div>}
+        {comparison.length === 0 && <p className="comparison-hint">两种模式使用相同问题和知识库。向量检索需要先配置 Embedding API，并上传已生成向量的文档。</p>}
       </section>
       <section className="documents-section">
         <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
           <div className="document-list">{documents.map((document) => <article className="document-row" key={document.id}>
             <div className="file-icon"><FileText size={19} /></div>
-            <div className="file-info"><strong>{document.filename}</strong><span>{formatSize(document.size)} · {document.character_count.toLocaleString()} 字符 · {document.chunk_count} 个片段</span></div>
+            <div className="file-info"><strong>{document.filename}</strong><span>{formatSize(document.size)} · {document.character_count.toLocaleString()} 字符 · {document.chunk_count} 个片段 · {document.embedded_chunk_count} 个向量</span></div>
             <span className="ready"><CheckCircle2 size={14} /> {document.embedded_chunk_count > 0 ? "向量已索引" : "文本已分块"}</span>
           </article>)}</div>}
       </section>
