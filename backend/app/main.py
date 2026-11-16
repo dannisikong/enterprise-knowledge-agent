@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
+from typing import Literal
 
 from app.services.document_service import (
     get_document_text,
@@ -37,6 +38,7 @@ app.add_middleware(
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=20)
+    mode: Literal["auto", "keyword", "vector"] = "auto"
 
 
 @app.get("/health", tags=["system"])
@@ -72,6 +74,6 @@ async def document_text(document_id: str) -> dict:
 @app.post("/search", tags=["retrieval"])
 async def search(request: SearchRequest) -> dict:
     try:
-        return await search_chunks(request.query, request.limit)
+        return await search_chunks(request.query, request.limit, request.mode)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
