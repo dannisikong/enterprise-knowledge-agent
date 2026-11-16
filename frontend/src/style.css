@@ -64,3 +64,18 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .result-top span { color: #8291a7; font-size: 10px; white-space: nowrap; }
 .result-card p { margin: 10px 0 0; color: #b4c0d1; font-size: 12px; line-height: 1.8; white-space: pre-wrap; }
 .empty-state.compact { padding: 18px; margin-top: 12px; }
+
+.comparison-hint { color: #8291a7; font-size: 11px; line-height: 1.7; margin: 12px 2px 0; }
+.comparison-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; align-items: start; }
+.comparison-column { min-width: 0; }
+.comparison-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 14px; border: 1px solid #35435c; border-radius: 10px; background: #1a2638; }
+.comparison-heading > div { display: flex; flex-direction: column; gap: 3px; }
+.comparison-heading strong { color: #e3dcff; font-size: 13px; }
+.comparison-heading span { color: #8291a7; font-size: 10px; }
+.comparison-heading .result-count { white-space: nowrap; color: #a99af1; }
+.comparison-error { display: flex; gap: 8px; align-items: flex-start; padding: 14px; margin-top: 10px; border: 1px solid #65434a; border-radius: 10px; background: #30232c; color: #ffb0b0; font-size: 11px; line-height: 1.7; }
+.comparison-column .result-list { margin-top: 10px; }
+.comparison-column .result-card { padding: 12px; }
+.comparison-column .result-top { align-items: flex-start; flex-direction: column; gap: 5px; }
+.comparison-column .result-top span { white-space: normal; }
+@media (max-width: 900px) { .comparison-grid { grid-template-columns: 1fr; } }
