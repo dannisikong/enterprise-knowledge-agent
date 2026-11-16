@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
+from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Literal
 
 from app.services.document_service import (
     get_document_text,
@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title="Enterprise Knowledge Agent API",
-    version="0.3.0",
+    version="0.4.0",
     description="API for document ingestion, chunking and knowledge retrieval.",
     lifespan=lifespan,
 )
@@ -38,7 +38,7 @@ app.add_middleware(
 class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=20)
-    mode: Literal["auto", "keyword", "vector"] = "auto"
+    mode: Literal["auto", "keyword", "vector", "hybrid"] = "auto"
 
 
 @app.get("/health", tags=["system"])
