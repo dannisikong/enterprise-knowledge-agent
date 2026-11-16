@@ -191,15 +191,17 @@ def _keyword_score(query: str, content: str) -> float:
     return matched / len(terms)
 
 
-async def search_chunks(query: str, limit: int = 5) -> dict:
+async def search_chunks(query: str, limit: int = 5, mode: str = "auto") -> dict:
     initialize_storage()
     query = query.strip()
     if not query:
         raise ValueError("Query must not be empty.")
     limit = max(1, min(limit, 20))
+    if mode not in {"auto", "keyword", "vector"}:
+        raise ValueError("Mode must be auto, keyword or vector.")
 
     query_vector = None
-    if embeddings_configured():
+    if mode in {"auto", "vector"} and embeddings_configured():
         try:
             vectors = await create_embeddings([query])
             query_vector = vectors[0] if vectors else None
@@ -216,6 +218,10 @@ async def search_chunks(query: str, limit: int = 5) -> dict:
 
     has_vectors = any(row["embedding"] for row in rows)
     use_vector_search = bool(query_vector and has_vectors)
+    if mode == "vector" and not use_vector_search:
+        raise ValueError("Vector search is unavailable. Configure embeddings and upload documents with vectors first.")
+    if mode == "keyword":
+        use_vector_search = False
     results = []
     search_mode = "vector" if use_vector_search else "keyword"
     for row in rows:
