@@ -214,14 +214,17 @@ async def search_chunks(query: str, limit: int = 5) -> dict:
             JOIN documents d ON d.id = c.document_id
         """).fetchall()
 
+    has_vectors = any(row["embedding"] for row in rows)
+    use_vector_search = bool(query_vector and has_vectors)
     results = []
-    search_mode = "vector" if query_vector else "keyword"
+    search_mode = "vector" if use_vector_search else "keyword"
     for row in rows:
-        if query_vector and row["embedding"]:
+        if use_vector_search:
+            if not row["embedding"]:
+                continue
             score = _cosine_similarity(query_vector, json.loads(row["embedding"]))
         else:
             score = _keyword_score(query, row["content"])
-            search_mode = "keyword"
         if score > 0:
             results.append({
                 "chunk_id": row["id"],
