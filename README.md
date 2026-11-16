@@ -1,30 +1,70 @@
 # Enterprise Knowledge Agent
 
-An enterprise knowledge-base assistant built with React, TypeScript, FastAPI, and an agentic RAG workflow.
+企业知识库助手 Demo，目标是构建一个具备文档 ingestion、可追溯 RAG 检索和 Agent 工作流的端到端应用。
 
-## Project goals
+## Tech stack
 
-- Upload and manage enterprise documents.
-- Retrieve grounded answers from the knowledge base.
-- Provide source citations for generated answers.
-- Expose an observable, testable agent workflow.
+- Frontend: React 18, TypeScript, Vite
+- Backend: Python 3.12, FastAPI
+- Document parsing: pypdf, python-docx, native text/Markdown
+- Metadata: SQLite for local development
+- Next: PostgreSQL + pgvector, hybrid retrieval, LangGraph
 
-## Development status
+## Current milestone: document ingestion
 
-Project initialized. The first milestone is a runnable full-stack skeleton; retrieval and agent capabilities will be added incrementally.
+- Upload PDF, DOCX, TXT and Markdown files (10 MB limit)
+- Extract text from uploaded documents
+- Store original files locally and metadata/extracted text in SQLite
+- List uploaded documents and show extraction status
 
-## Planned stack
+## Run locally
 
-- Frontend: React + TypeScript + Vite
-- Backend: Python + FastAPI
-- Agent orchestration: LangGraph
-- Storage and retrieval: PostgreSQL + pgvector
-- Local development: Docker Compose
+### Backend
 
-## Milestones
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
 
-1. Project skeleton and health-check API
-2. Document ingestion and parsing
-3. Vector indexing and hybrid retrieval
-4. RAG answer generation with citations
-5. Agent workflow, evaluation, and observability
+API docs: http://localhost:8000/docs
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173.
+
+### Docker Compose
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+## API
+
+- `GET /health` — service health
+- `POST /documents` — upload and parse a document (multipart field: `file`)
+- `GET /documents` — list ingested documents
+- `GET /documents/{id}/text` — inspect extracted text
+
+## Notes
+
+This is a local-development demo, not production document storage. Files and SQLite data are stored under `backend/data`; do not upload confidential company documents. Authentication, malware scanning, durable object storage, background jobs, and tenant isolation are not implemented yet.
+
+## Roadmap
+
+1. Document ingestion and parsing
+2. Chunking and metadata enrichment
+3. Embeddings and vector indexing
+4. Hybrid retrieval and reranking
+5. LangGraph answer workflow with citations
+6. Evaluation, observability, and deployment
