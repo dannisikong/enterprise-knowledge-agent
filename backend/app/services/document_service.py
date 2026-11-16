@@ -14,6 +14,7 @@ from pypdf import PdfReader
 
 from app.services.chunking import split_text
 from app.services.embedding_service import create_embeddings, embeddings_configured
+from app.services.retrieval import keyword_score, reciprocal_rank_fusion
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -61,21 +62,21 @@ def initialize_storage() -> None:
 def _extract_text(path: Path, extension: str) -> str:
     if extension == ".pdf":
         reader = PdfReader(str(path))
-        return "\n".join(page.extract_text() or "" for page in reader.pages)
+        return "\\n".join(page.extract_text() or "" for page in reader.pages)
     if extension == ".docx":
         document = DocxDocument(str(path))
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
         for table in document.tables:
             for row in table.rows:
                 paragraphs.append(" | ".join(cell.text for cell in row.cells))
-        return "\n".join(paragraphs)
+        return "\\n".join(paragraphs)
     return path.read_text(encoding="utf-8", errors="replace")
 
 
 def _clean_text(value: str) -> str:
-    value = value.replace("\x00", "")
-    value = re.sub(r"[ \t]+", " ", value)
-    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = value.replace("\\x00", "")
+    value = re.sub(r"[ \\t]+", " ", value)
+    value = re.sub(r"\\n{3,}", "\\n\\n", value)
     return value.strip()
 
 
@@ -105,7 +106,6 @@ async def upload_document(file: UploadFile) -> dict:
             try:
                 vectors = await create_embeddings(chunks)
             except Exception:
-                # Keep ingestion available; keyword retrieval remains usable.
                 vectors = None
 
         created_at = datetime.now(timezone.utc).isoformat()
@@ -119,10 +119,7 @@ async def upload_document(file: UploadFile) -> dict:
                 "INSERT INTO document_chunks (id, document_id, chunk_index, content, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 [
                     (
-                        str(uuid4()),
-                        document_id,
-                        index,
-                        chunk,
+                        str(uuid4()), document_id, index, chunk,
                         json.dumps(vectors[index]) if vectors and index < len(vectors) else None,
                         created_at,
                     )
@@ -130,12 +127,8 @@ async def upload_document(file: UploadFile) -> dict:
                 ],
             )
         return {
-            "id": document_id,
-            "filename": original_name,
-            "content_type": content_type,
-            "size": len(content),
-            "status": "ready",
-            "character_count": len(extracted_text),
+            "id": document_id, "filename": original_name, "content_type": content_type,
+            "size": len(content), "status": "ready", "character_count": len(extracted_text),
             "chunk_count": len(chunks),
             "embedding_status": "indexed" if vectors else "pending",
             "created_at": created_at,
@@ -165,8 +158,7 @@ def get_document_text(document_id: str) -> dict | None:
     initialize_storage()
     with _connect() as connection:
         row = connection.execute(
-            "SELECT id, filename, extracted_text FROM documents WHERE id = ?",
-            (document_id,),
+            "SELECT id, filename, extracted_text FROM documents WHERE id = ?", (document_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -182,13 +174,24 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / (left_norm * right_norm)
 
 
-def _keyword_score(query: str, content: str) -> float:
-    terms = {term.lower() for term in re.findall(r"[\w\u4e00-\u9fff]+", query) if len(term) > 1}
-    if not terms:
-        return 0.0
-    target = content.lower()
-    matched = sum(1 for term in terms if term in target)
-    return matched / len(terms)
+def _rank_keyword(rows, query: str) -> list[dict]:
+    results = []
+    for row in rows:
+        score = keyword_score(query, row["content"])
+        if score > 0:
+            results.append(_result_from_row(row, score))
+    return sorted(results, key=lambda item: item["score"], reverse=True)
+
+
+def _result_from_row(row, score: float) -> dict:
+    return {
+        "chunk_id": row["id"],
+        "document_id": row["document_id"],
+        "filename": row["filename"],
+        "chunk_index": row["chunk_index"],
+        "content": row["content"],
+        "score": round(float(score), 4),
+    }
 
 
 async def search_chunks(query: str, limit: int = 5, mode: str = "auto") -> dict:
@@ -197,49 +200,63 @@ async def search_chunks(query: str, limit: int = 5, mode: str = "auto") -> dict:
     if not query:
         raise ValueError("Query must not be empty.")
     limit = max(1, min(limit, 20))
-    if mode not in {"auto", "keyword", "vector"}:
-        raise ValueError("Mode must be auto, keyword or vector.")
+    if mode not in {"auto", "keyword", "vector", "hybrid"}:
+        raise ValueError("Mode must be auto, keyword, vector or hybrid.")
 
+    with _connect() as connection:
+        rows = connection.execute("""
+            SELECT c.id, c.document_id, c.chunk_index, c.content, c.embedding, d.filename
+            FROM document_chunks c
+            JOIN documents d ON d.id = c.document_id
+        """).fetchall()
+
+    keyword_results = _rank_keyword(rows, query) if mode in {"keyword", "hybrid", "auto"} else []
+    wants_vector = mode in {"vector", "hybrid", "auto"}
     query_vector = None
-    if mode in {"auto", "vector"} and embeddings_configured():
+    if wants_vector and embeddings_configured():
         try:
             vectors = await create_embeddings([query])
             query_vector = vectors[0] if vectors else None
         except Exception:
             query_vector = None
 
-    with _connect() as connection:
-        rows = connection.execute("""
-            SELECT c.id, c.document_id, c.chunk_index, c.content, c.embedding,
-                   d.filename
-            FROM document_chunks c
-            JOIN documents d ON d.id = c.document_id
-        """).fetchall()
-
-    has_vectors = any(row["embedding"] for row in rows)
-    use_vector_search = bool(query_vector and has_vectors)
-    if mode == "vector" and not use_vector_search:
-        raise ValueError("Vector search is unavailable. Configure embeddings and upload documents with vectors first.")
-    if mode == "keyword":
-        use_vector_search = False
-    results = []
-    search_mode = "vector" if use_vector_search else "keyword"
-    for row in rows:
-        if use_vector_search:
+    vector_results = []
+    if query_vector:
+        for row in rows:
             if not row["embedding"]:
                 continue
             score = _cosine_similarity(query_vector, json.loads(row["embedding"]))
-        else:
-            score = _keyword_score(query, row["content"])
-        if score > 0:
-            results.append({
-                "chunk_id": row["id"],
-                "document_id": row["document_id"],
-                "filename": row["filename"],
-                "chunk_index": row["chunk_index"],
-                "content": row["content"],
-                "score": round(float(score), 4),
-            })
+            if score > 0:
+                vector_results.append(_result_from_row(row, score))
+        vector_results.sort(key=lambda item: item["score"], reverse=True)
 
-    results.sort(key=lambda item: item["score"], reverse=True)
-    return {"query": query, "mode": search_mode, "results": results[:limit]}
+    has_stored_vectors = any(row["embedding"] for row in rows)
+    vector_available = bool(query_vector and has_stored_vectors)
+    if mode == "vector" and not vector_available:
+        raise ValueError(
+            "Vector search is unavailable. Configure embeddings and upload documents with vectors first."
+        )
+
+    if mode == "keyword":
+        effective_mode, results = "keyword", keyword_results[:limit]
+    elif mode == "vector":
+        effective_mode, results = "vector", vector_results[:limit]
+    elif vector_available:
+        effective_mode = "hybrid"
+        results = reciprocal_rank_fusion(
+            [keyword_results[:50], vector_results[:50]], limit=limit
+        )
+    else:
+        effective_mode, results = "keyword_fallback", keyword_results[:limit]
+
+    return {
+        "query": query,
+        "mode": effective_mode,
+        "requested_mode": mode,
+        "fallback_reason": (
+            None if effective_mode != "keyword_fallback"
+            else "Embedding API or indexed document vectors are unavailable; returned keyword results."
+        ),
+        "fusion": "reciprocal_rank_fusion" if effective_mode == "hybrid" else None,
+        "results": results,
+    }
