@@ -89,3 +89,17 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .rerank-toggle { display: flex; align-items: center; gap: 8px; margin: 10px 2px 0; color: #aab7ca; font-size: 11px; cursor: pointer; }
 .rerank-toggle input { accent-color: #b6a5ff; }
 .comparison-success { margin-top: 9px; padding: 9px 11px; border: 1px solid #32634f; border-radius: 8px; color: #8fe0b7; background: #19352d; font-size: 10px; }
+
+.chat-section { max-width: 850px; margin: 5vh auto 0; }
+.chat-section .section-heading h3 { display: flex; align-items: center; gap: 7px; }
+.chat-streaming { margin: 12px 2px; color: #a99af1; font-size: 11px; }
+.answer-card { margin-top: 14px; padding: 17px 18px; border: 1px solid #514779; border-radius: 12px; background: #201f38aa; }
+.answer-heading { display: flex; align-items: center; gap: 8px; color: #d9d0ff; font-size: 12px; font-weight: 700; margin-bottom: 10px; }
+.answer-content { color: #e1e7f0; font-size: 13px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
+.source-panel { margin-top: 14px; padding: 14px; border: 1px solid #35435c; border-radius: 11px; background: #131e2e; }
+.source-panel > strong { display: flex; align-items: center; gap: 7px; color: #c8bbff; font-size: 12px; }
+.source-item { margin-top: 9px; border: 1px solid #29364b; border-radius: 8px; overflow: hidden; }
+.source-item button { display: flex; justify-content: space-between; gap: 10px; width: 100%; padding: 10px 12px; border: 0; color: #cbd5e3; background: #192638; text-align: left; font-size: 11px; cursor: pointer; }
+.source-item button span:last-child { color: #b6a5ff; white-space: nowrap; }
+.source-item p { margin: 0; padding: 12px; color: #aab7ca; background: #111c2b; font-size: 11px; line-height: 1.8; white-space: pre-wrap; }
+@media (max-width: 720px) { .chat-section { margin-top: 5vh; } .chat-section .search-form button { padding: 9px 12px; } }
