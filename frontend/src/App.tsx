@@ -8,7 +8,7 @@ type KnowledgeDocument = {
 type SearchResult = {
   chunk_id: string; document_id: string; filename: string;
   chunk_index: number; content: string; score: number;
-  keyword_rank?: number; vector_rank?: number;
+  keyword_rank?: number; vector_rank?: number; rerank_score?: number;
 };
 type SearchMode = "keyword" | "vector" | "hybrid";
 type ComparisonResult = {
