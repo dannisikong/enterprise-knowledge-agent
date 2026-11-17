@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search } from "lucide-react";
+import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen } from "lucide-react";
 
 type KnowledgeDocument = {
   id: string; filename: string; size: number; status: string;
@@ -10,18 +10,18 @@ type SearchResult = {
   chunk_index: number; content: string; score: number;
   keyword_rank?: number; vector_rank?: number; rerank_score?: number;
 };
+type ChatSource = {
+  id: number; chunk_id: string; document_id: string; filename: string;
+  chunk_index: number; content: string; score?: number; rerank_score?: number;
+};
 type SearchMode = "keyword" | "vector" | "hybrid";
 type ComparisonResult = {
   mode: SearchMode; results: SearchResult[]; error?: string; fallback?: string;
   reranker?: string; rerankerError?: string;
 };
 const formatSize = (size: number) => size < 1024 * 1024 ? (size / 1024).toFixed(1) + " KB" : (size / 1024 / 1024).toFixed(1) + " MB";
-const modeTitle: Record<SearchMode, string> = {
-  keyword: "关键词检索", vector: "向量语义检索", hybrid: "混合检索",
-};
-const modeSubtitle: Record<SearchMode, string> = {
-  keyword: "Keyword Search", vector: "Vector Search", hybrid: "Hybrid · RRF",
-};
+const modeTitle: Record<SearchMode, string> = { keyword: "关键词检索", vector: "向量语义检索", hybrid: "混合检索" };
+const modeSubtitle: Record<SearchMode, string> = { keyword: "Keyword Search", vector: "Vector Search", hybrid: "Hybrid · RRF" };
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
@@ -31,9 +31,15 @@ export default function App() {
   const [rerankEnabled, setRerankEnabled] = useState(false);
   const [query, setQuery] = useState("");
   const [comparison, setComparison] = useState<ComparisonResult[]>([]);
+  const [chatAnswer, setChatAnswer] = useState("");
+  const [chatSources, setChatSources] = useState<ChatSource[]>([]);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [expandedSources, setExpandedSources] = useState<number[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatAbortRef = useRef<AbortController | null>(null);
 
   const loadDocuments = async () => {
     const response = await fetch("/api/documents");
@@ -47,6 +53,7 @@ export default function App() {
       setHealth("ok");
       return loadDocuments();
     }).catch(() => setHealth("error"));
+    return () => chatAbortRef.current?.abort();
   }, []);
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -81,8 +88,7 @@ export default function App() {
         return {
           mode, results: result.results as SearchResult[],
           fallback: result.mode === "keyword_fallback" ? result.fallback_reason : undefined,
-          reranker: result.reranker,
-          rerankerError: result.reranker_error,
+          reranker: result.reranker, rerankerError: result.reranker_error,
         };
       } catch (searchError) {
         return { mode, results: [], error: searchError instanceof Error ? searchError.message : "检索失败，请重试。" };
@@ -92,24 +98,75 @@ export default function App() {
     setSearching(false);
   };
 
+  const handleChat = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const question = query.trim();
+    if (!question || chatLoading) return;
+    chatAbortRef.current?.abort();
+    const controller = new AbortController();
+    chatAbortRef.current = controller;
+    setChatLoading(true); setChatError(""); setChatAnswer(""); setChatSources([]); setExpandedSources([]);
+    try {
+      const response = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: question, limit: 5, rerank: rerankEnabled }),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.detail || "问答请求失败");
+      }
+      if (!response.body) throw new Error("浏览器不支持流式响应");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let streamError = "";
+      const processEvent = (raw: string) => {
+        const lines = raw.split("\n");
+        const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
+        const dataLine = lines.find((line) => line.startsWith("data:"))?.slice(5).trim();
+        if (!dataLine) return;
+        const payload = JSON.parse(dataLine);
+        if (eventName === "sources") setChatSources(payload.sources || []);
+        if (eventName === "token") setChatAnswer((current) => current + (payload.content || ""));
+        if (eventName === "error") streamError = payload.message || "生成失败";
+      };
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        events.forEach(processEvent);
+        if (done) break;
+      }
+      if (buffer.trim()) processEvent(buffer);
+      if (streamError) throw new Error(streamError);
+    } catch (chatException) {
+      if (chatException instanceof Error && chatException.name === "AbortError") return;
+      setChatError(chatException instanceof Error ? chatException.message : "问答失败，请重试。");
+    } finally {
+      if (chatAbortRef.current === controller) chatAbortRef.current = null;
+      setChatLoading(false);
+    }
+  };
+
+  const toggleSource = (id: number) => setExpandedSources((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+
   const renderResults = (item: ComparisonResult) => <div className="comparison-column" key={item.mode}>
-    <div className="comparison-heading">
-      <div><strong>{modeTitle[item.mode]}</strong><span>{modeSubtitle[item.mode]}</span></div>
-      <span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span>
-    </div>
-    {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> :
-      <>
-        {item.fallback && <div className="comparison-fallback">{item.fallback}</div>}
-        {item.mode === "hybrid" && item.reranker === "applied" && <div className="comparison-success">已启用 Cross-Encoder 重排序</div>}
-        {item.mode === "hybrid" && item.reranker === "unavailable" && <div className="comparison-fallback">{item.rerankerError}</div>}
-        {item.mode === "hybrid" && item.reranker === "failed_fallback" && <div className="comparison-fallback">重排序服务调用失败，已回退到 RRF 排名：{item.rerankerError}</div>}
-        {item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
-          <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
-            <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · {item.mode === "hybrid" ? (item.reranker === "applied" ? "Rerank " : "RRF ") : "分数 "}{(item.mode === "hybrid" && item.reranker === "applied" ? result.rerank_score ?? result.score : result.score).toFixed(4)}</span></div>
-            {item.mode === "hybrid" && <div className="rank-meta">关键词排名：{result.keyword_rank ?? "—"} · 向量排名：{result.vector_rank ?? "—"}{item.reranker === "applied" ? " · 已重排序" : ""}</div>}
-            <p>{result.content}</p>
-          </article>)}</div>}
-      </>}
+    <div className="comparison-heading"><div><strong>{modeTitle[item.mode]}</strong><span>{modeSubtitle[item.mode]}</span></div><span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span></div>
+    {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> : <>
+      {item.fallback && <div className="comparison-fallback">{item.fallback}</div>}
+      {item.mode === "hybrid" && item.reranker === "applied" && <div className="comparison-success">已启用 Cross-Encoder 重排序</div>}
+      {item.mode === "hybrid" && item.reranker === "unavailable" && <div className="comparison-fallback">{item.rerankerError}</div>}
+      {item.mode === "hybrid" && item.reranker === "failed_fallback" && <div className="comparison-fallback">重排序服务调用失败，已回退到 RRF 排名：{item.rerankerError}</div>}
+      {item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
+        <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
+          <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · {item.mode === "hybrid" ? (item.reranker === "applied" ? "Rerank " : "RRF ") : "分数 "}{(item.mode === "hybrid" && item.reranker === "applied" ? result.rerank_score ?? result.score : result.score).toFixed(4)}</span></div>
+          {item.mode === "hybrid" && <div className="rank-meta">关键词排名：{result.keyword_rank ?? "—"} · 向量排名：{result.vector_rank ?? "—"}{item.reranker === "applied" ? " · 已重排序" : ""}</div>}
+          <p>{result.content}</p>
+        </article>)}</div>}
+    </>}
   </div>;
 
   return <main className="shell">
@@ -126,7 +183,7 @@ export default function App() {
         <div className="welcome-icon"><Sparkles size={22} /></div>
         <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
         <h2>让企业知识，随问随答</h2>
-        <p className="subtitle">上传企业文档，系统自动提取文本、切分知识片段，并支持多策略知识检索。</p>
+        <p className="subtitle">上传企业文档，系统自动提取文本、切分知识片段，并支持多策略检索与带来源引用的 AI 问答。</p>
         <input ref={inputRef} className="hidden-input" type="file" accept=".pdf,.docx,.txt,.md" onChange={handleUpload} />
         <button className="upload-box" onClick={() => inputRef.current?.click()} disabled={uploading}>
           {uploading ? <Loader2 className="spin" size={20} /> : <Upload size={20} />}
@@ -136,6 +193,25 @@ export default function App() {
         {message && <div className="notice success"><CheckCircle2 size={16} />{message}</div>}
         {error && <div className="notice error"><AlertCircle size={16} />{error}</div>}
       </section>
+
+      <section className="chat-section">
+        <div className="section-heading"><div><h3><BookOpen size={16} /> 知识库问答</h3><p>Hybrid Retrieval → 可选 Reranker → LLM，答案通过 SSE 实时生成</p></div></div>
+        <form className="search-form" onSubmit={handleChat}>
+          <Search size={18} />
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="向知识库提问，例如：员工年假有多少天？" />
+          <button type="submit" disabled={chatLoading || !query.trim()}>{chatLoading ? <><Loader2 className="spin" size={14} /> 生成中</> : <><Send size={14} /> 提问</>}</button>
+        </form>
+        {chatLoading && <div className="chat-streaming">正在检索资料并生成回答…</div>}
+        {chatError && <div className="comparison-error"><AlertCircle size={15} />{chatError}</div>}
+        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><div className="answer-content">{chatAnswer}</div></article>}
+        {chatSources.length > 0 && <div className="source-panel"><strong><BookOpen size={15} /> 参考来源（{chatSources.length}）</strong>
+          {chatSources.map((source) => <article className="source-item" key={source.id}>
+            <button type="button" onClick={() => toggleSource(source.id)}><span>[{source.id}] {source.filename} · 片段 #{source.chunk_index + 1}</span><span>{expandedSources.includes(source.id) ? "收起" : "查看依据"}</span></button>
+            {expandedSources.includes(source.id) && <p>{source.content}</p>}
+          </article>)}
+        </div>}
+      </section>
+
       <section className="search-section">
         <div className="section-heading"><div><h3>三种检索策略对比</h3><p>相同问题并行检索：关键词、向量语义，以及 RRF 融合后的混合排名</p></div></div>
         <form className="search-form" onSubmit={handleSearch}>
@@ -147,6 +223,7 @@ export default function App() {
         {comparison.length > 0 && <div className="comparison-grid">{comparison.map(renderResults)}</div>}
         {comparison.length === 0 && <p className="comparison-hint">向量和混合检索需要先配置 Embedding API，并上传已生成向量的文档；否则混合检索会明确降级为关键词检索。</p>}
       </section>
+
       <section className="documents-section">
         <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
@@ -156,7 +233,7 @@ export default function App() {
             <span className="ready"><CheckCircle2 size={14} /> {document.embedded_chunk_count > 0 ? "向量已索引" : "文本已分块"}</span>
           </article>)}</div>}
       </section>
-      <footer className="page-footer"><ShieldCheck size={14} /> 混合检索使用 Reciprocal Rank Fusion 融合关键词与向量的独立排名。</footer>
+      <footer className="page-footer"><ShieldCheck size={14} /> 混合检索使用 Reciprocal Rank Fusion；问答答案应以展开的来源片段为依据。</footer>
     </section>
   </main>;
 }
