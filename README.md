@@ -26,6 +26,47 @@
 7. Generate grounded answers from retrieved chunks and attach numbered source citations.
 8. Stream answer tokens and source metadata over SSE.
 
+## Run in GitHub Codespaces
+
+This repository includes a Dev Container configuration for an online development environment.
+
+1. Open the repository on GitHub.
+2. Select **Code → Codespaces → Create codespace on main**.
+3. Wait for the Dev Container to build and install the Python and frontend dependencies.
+4. Open two terminal sessions and start the backend and frontend separately.
+
+Backend terminal:
+
+```bash
+cd backend
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Frontend terminal:
+
+```bash
+cd frontend
+npm run dev -- --host 0.0.0.0
+```
+
+Codespaces forwards ports 5173 (frontend) and 8000 (backend). Open the forwarded frontend URL from the **Ports** tab. The Vite development proxy forwards `/api/*` requests to the backend; for example, the health endpoint is available at `/api/health`.
+
+Run backend tests from the repository root:
+
+```bash
+cd backend
+python -m pytest -q
+```
+
+Check the frontend TypeScript build:
+
+```bash
+cd frontend
+npm run build
+```
+
+Model API credentials are optional for starting the services and running unit tests. Add the required variables as Codespaces Secrets or to a local, untracked environment file when you want to test real embedding, reranking or chat requests. Never commit API keys. Uploaded documents and the SQLite database are stored under `backend/data/`, which is excluded from Git.
+
 ## Run locally
 
 ### Backend
