@@ -1,6 +1,6 @@
 # Enterprise Knowledge Agent
 
-企业知识库助手 Demo：从企业文档上传、解析、分块，到关键词、向量和混合检索的端到端应用。
+企业知识库助手 Demo：从企业文档上传、解析、分块，到混合检索、Reranker 和带来源引用的 RAG 问答。
 
 ## Tech stack
 
@@ -12,6 +12,8 @@
 - Local persistence: SQLite
 - Hybrid ranking: Reciprocal Rank Fusion (RRF)
 - Optional reranking: Cohere v2-compatible rerank API
+- Answer generation: OpenAI-compatible Chat Completions API
+- Streaming: Server-Sent Events (SSE)
 
 ## Current capabilities
 
@@ -20,9 +22,9 @@
 3. Split extracted text into chunks (default 800 characters, 120-character overlap).
 4. Optionally generate embeddings and persist vectors with each chunk.
 5. Compare keyword retrieval, vector cosine similarity and hybrid retrieval.
-6. Hybrid retrieval independently ranks keyword/vector results, then fuses the top 50 from each branch with RRF. It does not add incomparable raw scores.
-7. Browse document metadata, chunk counts and embedding status in the UI.
-8. Optionally rerank the hybrid candidate pool with a cross-encoder reranking API.
+6. Fuse independent keyword/vector rankings with RRF; optionally rerank candidates.
+7. Generate grounded answers from retrieved chunks and attach numbered source citations.
+8. Stream answer tokens and source metadata over SSE.
 
 ## Run locally
 
@@ -36,20 +38,21 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Optional: configure an OpenAI-compatible embedding endpoint. Copy `.env.example` to `.env` and set the values, then export them in your shell or load them with your preferred environment manager:
+Copy `.env.example` to `.env` and export the variables in your shell or load them with your preferred environment manager:
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+export OPENAI_API_KEY="your-embedding-api-key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 export EMBEDDING_MODEL="text-embedding-3-small"
 export RERANK_API_KEY="your-rerank-api-key"
 export RERANK_BASE_URL="https://api.cohere.com/v2"
 export RERANK_MODEL="rerank-v3.5"
+export LLM_API_KEY="your-chat-api-key"
+export LLM_BASE_URL="https://api.openai.com/v1"
+export LLM_MODEL="gpt-4o-mini"
 ```
 
-Without an Embedding API key, document ingestion and keyword retrieval still work. Newly uploaded chunks will have no vectors until embeddings are configured. Existing chunks are not automatically backfilled yet. Reranking is a separate optional service and requires `RERANK_API_KEY`; without it, normal hybrid RRF retrieval remains available.
-
-API docs: http://localhost:8000/docs
+The embedding, reranking and chat services are independently configurable. You may use compatible providers and their corresponding base URLs/models. Without `LLM_API_KEY`, retrieval still works but chat endpoints return a configuration error. Never commit real API keys.
 
 ### Frontend
 
@@ -63,7 +66,7 @@ Open http://localhost:5173.
 
 ### Docker Compose
 
-From the repository root, export the embedding variables if you want vector search, then run:
+From the repository root, export the environment variables you need and run:
 
 ```bash
 docker compose up --build
@@ -76,66 +79,54 @@ docker compose up --build
 - `GET /documents` — list documents and chunk/vector counts
 - `GET /documents/{id}/text` — inspect extracted text
 - `POST /search` — retrieve relevant chunks
+- `POST /chat` — generate an answer with source metadata
+- `POST /chat/stream` — stream source metadata and answer tokens using SSE
 
-Example hybrid request:
+Chat request:
 
 ```json
 {
-  "query": "公司的报销政策是什么？",
+  "query": "员工年假有多少天？",
   "limit": 5,
-  "mode": "hybrid",
-  "rerank": true
+  "rerank": false
 }
 ```
 
-Supported modes:
-- `keyword`: lightweight token-presence matching; not BM25.
-- `vector`: embedding cosine similarity; requires query and document vectors.
-- `hybrid`: RRF fusion of keyword and vector rankings; falls back to keyword results when vectors are unavailable.
-- `auto`: same hybrid-first behavior and keyword fallback as `hybrid`.
+Non-streaming response contains `answer`, `sources` and retrieval metadata. The model is instructed to answer only from retrieved context, say when evidence is insufficient, and cite source IDs such as `[1]`. The UI displays the matching filename and chunk for each source.
 
-Set `rerank: true` on a hybrid search request to rerank up to 20 RRF candidates and return the top `limit` results. The reranker uses a Cohere v2-compatible `/rerank` endpoint. The response reports `reranker: applied`, `unavailable`, or `failed_fallback`; if the provider is unavailable or errors, results safely fall back to the original RRF order. The UI includes a toggle for this comparison.
+SSE events:
+- `sources`: source list and retrieval metadata, sent before answer tokens
+- `token`: one generated text fragment in `content`
+- `done`: generation completed
+- `error`: generation failed
 
-## Retrieval experiment
+The frontend consumes the SSE stream using Fetch and a readable stream, so the POST request body and browser streaming are both supported.
+
+## Retrieval experiment and evaluation
 
 - Sample document: `samples/employee-handbook.md`
-- Step-by-step comparison of keyword and vector retrieval: [`docs/retrieval-experiment.md`](docs/retrieval-experiment.md)
-- The UI compares all three strategies for the same query.
-- RRF uses a rank constant of 60 and merges duplicate chunks by `chunk_id`.
+- Comparison guide: `docs/retrieval-experiment.md`
+- Evaluation dataset: `backend/evaluation/retrieval_dataset.json`
+- Evaluation script: `backend/scripts/evaluate_retrieval.py`
+- Metrics: single-gold-passage Recall@K and MRR
+
+Run the API, upload the sample handbook, then run `python scripts/evaluate_retrieval.py` from `backend`.
 
 ## Current limitations
 
 - This is a local-development demo. Do not upload confidential company documents.
-- SQLite and local disk are used for simplicity; PostgreSQL/pgvector and object storage are planned.
+- SQLite and local disk are used for simplicity; PostgreSQL/pgvector and object storage are future improvements.
 - Existing chunks are not automatically re-embedded when the embedding model changes.
-- Keyword matching is a simple token-presence baseline, not BM25 or a production-grade Chinese full-text search engine. It does not perform robust Chinese word segmentation.
-- RRF improves rank fusion but cannot compensate for poor retrieval candidates; the top 50 from each branch are considered.
-- Authentication, tenant isolation, malware scanning, background jobs, OCR and answer generation are not implemented yet. Reranking is optional and depends on an external provider; no local cross-encoder model is bundled.
+- Keyword matching is a lightweight token-presence baseline, not BM25 or production-grade Chinese full-text search.
+- RRF cannot compensate for missing retrieval candidates; the evaluation dataset is small and not a production benchmark.
+- The RAG prompt asks the model to cite retrieved source IDs, but LLM output is not yet independently verified against each claim. Treat citations as model-generated references, not a formal guarantee.
+- Authentication, tenant isolation, permissions, OCR, background jobs, observability and production deployment are not implemented.
 
 ## Roadmap
 
 1. ~~Document ingestion and parsing~~
-2. ~~Chunking and embedding foundation~~
-3. ~~Keyword/vector comparison and hybrid RRF retrieval~~
-4. ~~Retrieval evaluation~~ and optional reranking
-5. LangGraph answer workflow with source citations
+2. ~~Chunking, embeddings and retrieval~~
+3. ~~Hybrid RRF and optional reranking~~
+4. ~~RAG answer generation, source metadata and SSE streaming~~
+5. Retrieval quality improvements, citation validation and evaluation of answer faithfulness
 6. Authentication, tenant isolation, observability and deployment
-
-
-## Retrieval evaluation
-
-A small labeled evaluation set and repeatable API evaluation script are available:
-
-- Dataset: `backend/evaluation/retrieval_dataset.json`
-- Script: `backend/scripts/evaluate_retrieval.py`
-- Metrics: single-gold-passage Recall@K and MRR
-- Tests: `backend/tests/test_retrieval_evaluation.py`
-
-Run the API first, upload `samples/employee-handbook.md`, then run:
-
-```bash
-cd backend
-python scripts/evaluate_retrieval.py
-```
-
-The vector mode requires both query embeddings and indexed document vectors. The script marks it unavailable on API errors rather than counting fallback keyword results as vector results. This is a small demonstration dataset, not a production benchmark.
