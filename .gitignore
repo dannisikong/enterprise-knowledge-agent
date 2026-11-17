@@ -10,6 +10,12 @@ __pycache__/
 .venv/
 .pytest_cache/
 
+# Application data (SQLite databases and uploaded documents)
+backend/data/
+*.db
+*.sqlite
+*.sqlite3
+
 # IDE / OS
 .vscode/
 .idea/
