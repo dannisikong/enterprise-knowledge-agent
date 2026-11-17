@@ -11,6 +11,7 @@
 - Embeddings: OpenAI-compatible Embeddings API (optional)
 - Local persistence: SQLite
 - Hybrid ranking: Reciprocal Rank Fusion (RRF)
+- Optional reranking: Cohere v2-compatible rerank API
 
 ## Current capabilities
 
@@ -21,6 +22,7 @@
 5. Compare keyword retrieval, vector cosine similarity and hybrid retrieval.
 6. Hybrid retrieval independently ranks keyword/vector results, then fuses the top 50 from each branch with RRF. It does not add incomparable raw scores.
 7. Browse document metadata, chunk counts and embedding status in the UI.
+8. Optionally rerank the hybrid candidate pool with a cross-encoder reranking API.
 
 ## Run locally
 
@@ -40,9 +42,12 @@ Optional: configure an OpenAI-compatible embedding endpoint. Copy `.env.example`
 export OPENAI_API_KEY="your-api-key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 export EMBEDDING_MODEL="text-embedding-3-small"
+export RERANK_API_KEY="your-rerank-api-key"
+export RERANK_BASE_URL="https://api.cohere.com/v2"
+export RERANK_MODEL="rerank-v3.5"
 ```
 
-Without an API key, document ingestion and keyword retrieval still work. Newly uploaded chunks will have no vectors until embeddings are configured. Existing chunks are not automatically backfilled yet.
+Without an Embedding API key, document ingestion and keyword retrieval still work. Newly uploaded chunks will have no vectors until embeddings are configured. Existing chunks are not automatically backfilled yet. Reranking is a separate optional service and requires `RERANK_API_KEY`; without it, normal hybrid RRF retrieval remains available.
 
 API docs: http://localhost:8000/docs
 
@@ -78,7 +83,8 @@ Example hybrid request:
 {
   "query": "公司的报销政策是什么？",
   "limit": 5,
-  "mode": "hybrid"
+  "mode": "hybrid",
+  "rerank": true
 }
 ```
 
@@ -87,6 +93,8 @@ Supported modes:
 - `vector`: embedding cosine similarity; requires query and document vectors.
 - `hybrid`: RRF fusion of keyword and vector rankings; falls back to keyword results when vectors are unavailable.
 - `auto`: same hybrid-first behavior and keyword fallback as `hybrid`.
+
+Set `rerank: true` on a hybrid search request to rerank up to 20 RRF candidates and return the top `limit` results. The reranker uses a Cohere v2-compatible `/rerank` endpoint. The response reports `reranker: applied`, `unavailable`, or `failed_fallback`; if the provider is unavailable or errors, results safely fall back to the original RRF order. The UI includes a toggle for this comparison.
 
 ## Retrieval experiment
 
@@ -102,14 +110,14 @@ Supported modes:
 - Existing chunks are not automatically re-embedded when the embedding model changes.
 - Keyword matching is a simple token-presence baseline, not BM25 or a production-grade Chinese full-text search engine. It does not perform robust Chinese word segmentation.
 - RRF improves rank fusion but cannot compensate for poor retrieval candidates; the top 50 from each branch are considered.
-- Authentication, tenant isolation, malware scanning, background jobs, OCR, reranking, answer generation and evaluation are not implemented yet.
+- Authentication, tenant isolation, malware scanning, background jobs, OCR and answer generation are not implemented yet. Reranking is optional and depends on an external provider; no local cross-encoder model is bundled.
 
 ## Roadmap
 
 1. ~~Document ingestion and parsing~~
 2. ~~Chunking and embedding foundation~~
 3. ~~Keyword/vector comparison and hybrid RRF retrieval~~
-4. Reranking and retrieval evaluation
+4. ~~Retrieval evaluation~~ and optional reranking
 5. LangGraph answer workflow with source citations
 6. Authentication, tenant isolation, observability and deployment
 
