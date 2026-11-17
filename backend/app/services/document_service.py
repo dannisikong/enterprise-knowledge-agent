@@ -15,6 +15,7 @@ from pypdf import PdfReader
 from app.services.chunking import split_text
 from app.services.embedding_service import create_embeddings, embeddings_configured
 from app.services.retrieval import keyword_score, reciprocal_rank_fusion
+from app.services.reranker_service import rerank_documents, reranker_configured
 
 DATA_DIR = Path(__file__).resolve().parents[2] / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -194,7 +195,7 @@ def _result_from_row(row, score: float) -> dict:
     }
 
 
-async def search_chunks(query: str, limit: int = 5, mode: str = "auto") -> dict:
+async def search_chunks(query: str, limit: int = 5, mode: str = "auto", rerank: bool = False) -> dict:
     initialize_storage()
     query = query.strip()
     if not query:
@@ -243,15 +244,35 @@ async def search_chunks(query: str, limit: int = 5, mode: str = "auto") -> dict:
         effective_mode, results = "vector", vector_results[:limit]
     elif vector_available:
         effective_mode = "hybrid"
-        results = reciprocal_rank_fusion(
-            [keyword_results[:50], vector_results[:50]], limit=limit
+        candidates = reciprocal_rank_fusion(
+            [keyword_results[:50], vector_results[:50]], limit=min(20, max(limit * 4, limit))
         )
+        results = candidates[:limit]
     else:
         effective_mode, results = "keyword_fallback", keyword_results[:limit]
+
+    reranker_status = "not_requested"
+    reranker_error = None
+    if rerank:
+        if effective_mode != "hybrid":
+            reranker_status = "skipped_no_hybrid_candidates"
+        elif not reranker_configured():
+            reranker_status = "unavailable"
+            reranker_error = "Configure RERANK_API_KEY to enable reranking."
+        else:
+            try:
+                results = await rerank_documents(query, candidates, limit)
+                reranker_status = "applied"
+            except Exception as error:
+                reranker_status = "failed_fallback"
+                reranker_error = str(error)
+                results = candidates[:limit]
 
     return {
         "query": query,
         "mode": effective_mode,
+        "reranker": reranker_status,
+        "reranker_error": reranker_error,
         "requested_mode": mode,
         "fallback_reason": (
             None if effective_mode != "keyword_fallback"
