@@ -112,3 +112,22 @@ Supported modes:
 4. Reranking and retrieval evaluation
 5. LangGraph answer workflow with source citations
 6. Authentication, tenant isolation, observability and deployment
+
+
+## Retrieval evaluation
+
+A small labeled evaluation set and repeatable API evaluation script are available:
+
+- Dataset: `backend/evaluation/retrieval_dataset.json`
+- Script: `backend/scripts/evaluate_retrieval.py`
+- Metrics: single-gold-passage Recall@K and MRR
+- Tests: `backend/tests/test_retrieval_evaluation.py`
+
+Run the API first, upload `samples/employee-handbook.md`, then run:
+
+```bash
+cd backend
+python scripts/evaluate_retrieval.py
+```
+
+The vector mode requires both query embeddings and indexed document vectors. The script marks it unavailable on API errors rather than counting fallback keyword results as vector results. This is a small demonstration dataset, not a production benchmark.
