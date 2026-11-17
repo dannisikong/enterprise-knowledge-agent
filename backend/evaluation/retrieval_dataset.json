@@ -1,0 +1,37 @@
+[
+  {
+    "id": "leave-days",
+    "query": "员工每年能休多少天带薪年假？",
+    "gold_phrase": "每年 10 天带薪年假"
+  },
+  {
+    "id": "leave-application",
+    "query": "休年假要提前多久向主管申请？",
+    "gold_phrase": "至少提前 3 个工作日"
+  },
+  {
+    "id": "travel-deadline",
+    "query": "出差回来后最晚多久提交报销材料？",
+    "gold_phrase": "10 个工作日内"
+  },
+  {
+    "id": "travel-payment",
+    "query": "差旅报销的钱什么时候发放？",
+    "gold_phrase": "下一个月的工资日"
+  },
+  {
+    "id": "screen-lock",
+    "query": "员工暂时离开办公桌时电脑需要怎么处理？",
+    "gold_phrase": "超过 5 分钟应锁定屏幕"
+  },
+  {
+    "id": "personal-cloud",
+    "query": "可以把客户文件上传到自己的网盘或公共 AI 工具吗？",
+    "gold_phrase": "禁止将客户资料上传"
+  },
+  {
+    "id": "security-incident",
+    "query": "发现公司设备丢失后应该在多长时间内上报？",
+    "gold_phrase": "在 1 小时内通知信息安全团队"
+  }
+]
