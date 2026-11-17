@@ -13,6 +13,7 @@ type SearchResult = {
 type SearchMode = "keyword" | "vector" | "hybrid";
 type ComparisonResult = {
   mode: SearchMode; results: SearchResult[]; error?: string; fallback?: string;
+  reranker?: string; rerankerError?: string;
 };
 const formatSize = (size: number) => size < 1024 * 1024 ? (size / 1024).toFixed(1) + " KB" : (size / 1024 / 1024).toFixed(1) + " MB";
 const modeTitle: Record<SearchMode, string> = {
@@ -27,6 +28,7 @@ export default function App() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searching, setSearching] = useState(false);
+  const [rerankEnabled, setRerankEnabled] = useState(false);
   const [query, setQuery] = useState("");
   const [comparison, setComparison] = useState<ComparisonResult[]>([]);
   const [message, setMessage] = useState("");
@@ -72,13 +74,15 @@ export default function App() {
       try {
         const response = await fetch("/api/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: query.trim(), limit: 5, mode }),
+          body: JSON.stringify({ query: query.trim(), limit: 5, mode, rerank: mode === "hybrid" && rerankEnabled }),
         });
         const result = await response.json();
         if (!response.ok) throw new Error(result.detail || "检索失败");
         return {
           mode, results: result.results as SearchResult[],
           fallback: result.mode === "keyword_fallback" ? result.fallback_reason : undefined,
+          reranker: result.reranker,
+          rerankerError: result.reranker_error,
         };
       } catch (searchError) {
         return { mode, results: [], error: searchError instanceof Error ? searchError.message : "检索失败，请重试。" };
@@ -96,10 +100,13 @@ export default function App() {
     {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> :
       <>
         {item.fallback && <div className="comparison-fallback">{item.fallback}</div>}
+        {item.mode === "hybrid" && item.reranker === "applied" && <div className="comparison-success">已启用 Cross-Encoder 重排序</div>}
+        {item.mode === "hybrid" && item.reranker === "unavailable" && <div className="comparison-fallback">{item.rerankerError}</div>}
+        {item.mode === "hybrid" && item.reranker === "failed_fallback" && <div className="comparison-fallback">重排序服务调用失败，已回退到 RRF 排名：{item.rerankerError}</div>}
         {item.results.length === 0 ? <div className="empty-state compact">没有找到匹配片段</div> :
           <div className="result-list">{item.results.map((result, index) => <article className="result-card" key={result.chunk_id}>
-            <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · {item.mode === "hybrid" ? "RRF " : "分数 "}{result.score.toFixed(4)}</span></div>
-            {item.mode === "hybrid" && <div className="rank-meta">关键词排名：{result.keyword_rank ?? "—"} · 向量排名：{result.vector_rank ?? "—"}</div>}
+            <div className="result-top"><strong>#{index + 1} · {result.filename}</strong><span>片段 #{result.chunk_index + 1} · {item.mode === "hybrid" ? (item.reranker === "applied" ? "Rerank " : "RRF ") : "分数 "}{(item.mode === "hybrid" && item.reranker === "applied" ? result.rerank_score ?? result.score : result.score).toFixed(4)}</span></div>
+            {item.mode === "hybrid" && <div className="rank-meta">关键词排名：{result.keyword_rank ?? "—"} · 向量排名：{result.vector_rank ?? "—"}{item.reranker === "applied" ? " · 已重排序" : ""}</div>}
             <p>{result.content}</p>
           </article>)}</div>}
       </>}
@@ -136,6 +143,7 @@ export default function App() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如：出差回来后，多久之内要交票据？" />
           <button type="submit" disabled={searching || !query.trim()}>{searching ? "对比中…" : "同时检索"}</button>
         </form>
+        <label className="rerank-toggle"><input type="checkbox" checked={rerankEnabled} onChange={(event) => setRerankEnabled(event.target.checked)} /> 对混合检索结果启用 Reranker（需配置独立 API）</label>
         {comparison.length > 0 && <div className="comparison-grid">{comparison.map(renderResults)}</div>}
         {comparison.length === 0 && <p className="comparison-hint">向量和混合检索需要先配置 Embedding API，并上传已生成向量的文档；否则混合检索会明确降级为关键词检索。</p>}
       </section>
