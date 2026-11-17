@@ -55,6 +55,17 @@ def main() -> int:
             except (URLError, TimeoutError) as error:
                 raise SystemExit(f"Cannot reach API at {args.base_url}: {error}") from error
 
+            effective_mode = response.get("mode")
+            expected_effective_mode = "hybrid" if mode == "hybrid" else mode
+            if effective_mode != expected_effective_mode:
+                details = []
+                print(
+                    f"[skip] {mode} returned effective mode {effective_mode!r}; "
+                    "configure and index embeddings before comparing this mode.",
+                    file=sys.stderr,
+                )
+                break
+
             results = response.get("results", [])
             metrics = evaluate_query(results, case["gold_phrase"], args.k)
             query_rows.append(metrics)
