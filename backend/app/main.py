@@ -39,6 +39,7 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=20)
     mode: Literal["auto", "keyword", "vector", "hybrid"] = "auto"
+    rerank: bool = False
 
 
 @app.get("/health", tags=["system"])
@@ -74,6 +75,6 @@ async def document_text(document_id: str) -> dict:
 @app.post("/search", tags=["retrieval"])
 async def search(request: SearchRequest) -> dict:
     try:
-        return await search_chunks(request.query, request.limit, request.mode)
+        return await search_chunks(request.query, request.limit, request.mode, request.rerank)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
