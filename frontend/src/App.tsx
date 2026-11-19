@@ -39,6 +39,7 @@ export default function App() {
   const [chatStatus, setChatStatus] = useState<"idle" | "connecting" | "streaming" | "completed" | "error" | "cancelled">("idle");
   const [chatError, setChatError] = useState("");
   const [expandedSources, setExpandedSources] = useState<number[]>([]);
+  const [highlightedSourceId, setHighlightedSourceId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -115,6 +116,7 @@ export default function App() {
     setChatAnswer("");
     setChatSources([]);
     setExpandedSources([]);
+    setHighlightedSourceId(null);
 
     try {
       const response = await fetch("/api/chat/stream", {
@@ -166,6 +168,17 @@ export default function App() {
 
   const toggleSource = (id: number) => setExpandedSources((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
+  const handleCitationClick = (id: number) => {
+    if (!chatSources.some((source) => source.id === id)) return;
+    setExpandedSources((current) => current.includes(id) ? current : [...current, id]);
+    setHighlightedSourceId(id);
+  };
+
+  useEffect(() => {
+    if (highlightedSourceId === null) return;
+    document.getElementById(`source-${highlightedSourceId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedSourceId, chatSources]);
+
   const renderResults = (item: ComparisonResult) => <div className="comparison-column" key={item.mode}>
     <div className="comparison-heading"><div><strong>{modeTitle[item.mode]}</strong><span>{modeSubtitle[item.mode]}</span></div><span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span></div>
     {item.error ? <div className="comparison-error"><AlertCircle size={15} /><span>{item.error}</span></div> : <>
@@ -216,9 +229,9 @@ export default function App() {
         </form>
         {chatLoading && <div className="chat-streaming">{chatStatus === "connecting" ? "正在连接问答服务…" : "正在检索资料并生成回答…"}</div>}
         {chatError && <div className="comparison-error"><AlertCircle size={15} />{chatError}</div>}
-        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><ChatMessage content={chatAnswer} /></article>}
+        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><ChatMessage content={chatAnswer} sourceIds={chatSources.map((source) => source.id)} onCitationClick={handleCitationClick} /></article>}
         {chatSources.length > 0 && <div className="source-panel"><strong><BookOpen size={15} /> 参考来源（{chatSources.length}）</strong>
-          {chatSources.map((source) => <article className="source-item" key={source.id}>
+          {chatSources.map((source) => <article id={`source-${source.id}`} className={`source-item${highlightedSourceId === source.id ? " source-item-highlighted" : ""}`} key={source.id}>
             <button type="button" onClick={() => toggleSource(source.id)}><span>[{source.id}] {source.filename} · 片段 #{source.chunk_index + 1}</span><span>{expandedSources.includes(source.id) ? "收起" : "查看依据"}</span></button>
             {expandedSources.includes(source.id) && <p>{source.content}</p>}
           </article>)}
