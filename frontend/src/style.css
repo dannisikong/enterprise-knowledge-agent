@@ -103,3 +103,27 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .source-item button span:last-child { color: #b6a5ff; white-space: nowrap; }
 .source-item p { margin: 0; padding: 12px; color: #aab7ca; background: #111c2b; font-size: 11px; line-height: 1.8; white-space: pre-wrap; }
 @media (max-width: 720px) { .chat-section { margin-top: 5vh; } .chat-section .search-form button { padding: 9px 12px; } }
+
+
+/* Markdown rendering for assistant responses */
+.answer-card .answer-content { white-space: normal; overflow-wrap: anywhere; }
+.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :last-child { margin-bottom: 0; }
+.markdown-body p, .markdown-body ul, .markdown-body ol, .markdown-body blockquote { margin: 10px 0; }
+.markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4 { color: #eee9ff; line-height: 1.45; margin: 18px 0 9px; }
+.markdown-body h1 { font-size: 20px; }
+.markdown-body h2 { font-size: 17px; }
+.markdown-body h3, .markdown-body h4 { font-size: 14px; }
+.markdown-body ul, .markdown-body ol { padding-left: 23px; }
+.markdown-body li { margin: 4px 0; }
+.markdown-body a { color: #b6a5ff; text-decoration: underline; text-underline-offset: 3px; }
+.markdown-body blockquote { margin-left: 0; padding: 2px 0 2px 13px; border-left: 3px solid #71659e; color: #aab7ca; }
+.markdown-body :not(pre) > code { padding: 2px 5px; border: 1px solid #35435c; border-radius: 5px; background: #111c2b; color: #e5dfff; font-size: .92em; }
+.markdown-body pre { max-width: 100%; overflow-x: auto; margin: 12px 0; padding: 14px; border: 1px solid #35435c; border-radius: 9px; background: #101a29; font-size: 12px; line-height: 1.65; }
+.markdown-body pre code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.markdown-body table { display: block; width: 100%; max-width: 100%; overflow-x: auto; border-collapse: collapse; font-size: 12px; }
+.markdown-body th, .markdown-body td { padding: 8px 11px; border: 1px solid #35435c; text-align: left; }
+.markdown-body th { color: #e3dcff; background: #1a2638; }
+.markdown-body tr:nth-child(even) { background: #131e2e; }
+.markdown-body hr { border: 0; border-top: 1px solid #35435c; margin: 18px 0; }
+.markdown-body input[type="checkbox"] { accent-color: #b6a5ff; margin-right: 7px; }
