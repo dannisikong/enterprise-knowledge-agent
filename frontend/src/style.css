@@ -127,3 +127,34 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .markdown-body tr:nth-child(even) { background: #131e2e; }
 .markdown-body hr { border: 0; border-top: 1px solid #35435c; margin: 18px 0; }
 .markdown-body input[type="checkbox"] { accent-color: #b6a5ff; margin-right: 7px; }
+
+/* Clickable answer citations and their matching source card */
+.markdown-body a[href^="#source-"] {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 5px;
+  border: 1px solid #514779;
+  border-radius: 5px;
+  color: #d9d0ff;
+  background: #292746;
+  font-size: .92em;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .18s ease, border-color .18s ease;
+}
+.markdown-body a[href^="#source-"]:hover {
+  border-color: #a99af1;
+  background: #3a345d;
+}
+.source-item {
+  scroll-margin-top: 24px;
+}
+.source-item-highlighted {
+  border-color: #a99af1;
+  box-shadow: 0 0 0 2px #a99af133;
+  animation: source-citation-highlight 1.8s ease-out;
+}
+@keyframes source-citation-highlight {
+  0% { background: #39325c; }
+  100% { background: transparent; }
+}
