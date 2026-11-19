@@ -172,6 +172,7 @@ export default function App() {
     if (!chatSources.some((source) => source.id === id)) return;
     setExpandedSources((current) => current.includes(id) ? current : [...current, id]);
     setHighlightedSourceId(id);
+    document.getElementById(`source-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   useEffect(() => {
