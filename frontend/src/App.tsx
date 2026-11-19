@@ -1,5 +1,6 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { readSSEStream } from "./services/stream";
+import ChatMessage from "./components/chat/ChatMessage";
 import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen } from "lucide-react";
 
 type KnowledgeDocument = {
@@ -215,7 +216,7 @@ export default function App() {
         </form>
         {chatLoading && <div className="chat-streaming">{chatStatus === "connecting" ? "正在连接问答服务…" : "正在检索资料并生成回答…"}</div>}
         {chatError && <div className="comparison-error"><AlertCircle size={15} />{chatError}</div>}
-        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><div className="answer-content">{chatAnswer}</div></article>}
+        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><ChatMessage content={chatAnswer} /></article>}
         {chatSources.length > 0 && <div className="source-panel"><strong><BookOpen size={15} /> 参考来源（{chatSources.length}）</strong>
           {chatSources.map((source) => <article className="source-item" key={source.id}>
             <button type="button" onClick={() => toggleSource(source.id)}><span>[{source.id}] {source.filename} · 片段 #{source.chunk_index + 1}</span><span>{expandedSources.includes(source.id) ? "收起" : "查看依据"}</span></button>
