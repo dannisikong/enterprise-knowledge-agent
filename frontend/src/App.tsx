@@ -1,4 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { readSSEStream } from "./services/stream";
 import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen } from "lucide-react";
 
 type KnowledgeDocument = {
@@ -34,6 +35,7 @@ export default function App() {
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatSources, setChatSources] = useState<ChatSource[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatStatus, setChatStatus] = useState<"idle" | "connecting" | "streaming" | "completed" | "error" | "cancelled">("idle");
   const [chatError, setChatError] = useState("");
   const [expandedSources, setExpandedSources] = useState<number[]>([]);
   const [message, setMessage] = useState("");
@@ -102,10 +104,17 @@ export default function App() {
     event.preventDefault();
     const question = query.trim();
     if (!question || chatLoading) return;
+
     chatAbortRef.current?.abort();
     const controller = new AbortController();
     chatAbortRef.current = controller;
-    setChatLoading(true); setChatError(""); setChatAnswer(""); setChatSources([]); setExpandedSources([]);
+    setChatLoading(true);
+    setChatStatus("connecting");
+    setChatError("");
+    setChatAnswer("");
+    setChatSources([]);
+    setExpandedSources([]);
+
     try {
       const response = await fetch("/api/chat/stream", {
         method: "POST",
@@ -118,36 +127,39 @@ export default function App() {
         throw new Error(payload.detail || "问答请求失败");
       }
       if (!response.body) throw new Error("浏览器不支持流式响应");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let streamError = "";
-      const processEvent = (raw: string) => {
-        const lines = raw.split("\n");
-        const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
-        const dataLine = lines.find((line) => line.startsWith("data:"))?.slice(5).trim();
-        if (!dataLine) return;
-        const payload = JSON.parse(dataLine);
-        if (eventName === "sources") setChatSources(payload.sources || []);
-        if (eventName === "token") setChatAnswer((current) => current + (payload.content || ""));
-        if (eventName === "error") streamError = payload.message || "生成失败";
-      };
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-        events.forEach(processEvent);
-        if (done) break;
+
+      let receivedDone = false;
+      for await (const message of readSSEStream(response.body)) {
+        if (message.event === "sources") {
+          const payload = JSON.parse(message.data);
+          setChatSources(payload.sources || []);
+          setChatStatus("streaming");
+        } else if (message.event === "token") {
+          const payload = JSON.parse(message.data);
+          setChatAnswer((current) => current + (payload.content || ""));
+          setChatStatus("streaming");
+        } else if (message.event === "error") {
+          const payload = JSON.parse(message.data);
+          throw new Error(payload.message || "生成失败");
+        } else if (message.event === "done") {
+          receivedDone = true;
+          setChatStatus("completed");
+        }
       }
-      if (buffer.trim()) processEvent(buffer);
-      if (streamError) throw new Error(streamError);
+
+      if (!receivedDone) throw new Error("流式响应意外结束，请重试。");
     } catch (chatException) {
-      if (chatException instanceof Error && chatException.name === "AbortError") return;
+      if (chatException instanceof Error && chatException.name === "AbortError") {
+        setChatStatus("cancelled");
+        return;
+      }
+      setChatStatus("error");
       setChatError(chatException instanceof Error ? chatException.message : "问答失败，请重试。");
     } finally {
-      if (chatAbortRef.current === controller) chatAbortRef.current = null;
-      setChatLoading(false);
+      if (chatAbortRef.current === controller) {
+        chatAbortRef.current = null;
+        setChatLoading(false);
+      }
     }
   };
 
@@ -201,7 +213,7 @@ export default function App() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="向知识库提问，例如：员工年假有多少天？" />
           <button type="submit" disabled={chatLoading || !query.trim()}>{chatLoading ? <><Loader2 className="spin" size={14} /> 生成中</> : <><Send size={14} /> 提问</>}</button>
         </form>
-        {chatLoading && <div className="chat-streaming">正在检索资料并生成回答…</div>}
+        {chatLoading && <div className="chat-streaming">{chatStatus === "connecting" ? "正在连接问答服务…" : "正在检索资料并生成回答…"}</div>}
         {chatError && <div className="comparison-error"><AlertCircle size={15} />{chatError}</div>}
         {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><div className="answer-content">{chatAnswer}</div></article>}
         {chatSources.length > 0 && <div className="source-panel"><strong><BookOpen size={15} /> 参考来源（{chatSources.length}）</strong>

@@ -65,6 +65,28 @@ async def generate_answer(messages: list[dict]) -> str:
     return payload["choices"][0]["message"]["content"]
 
 
+async def _iter_sse_data(lines: AsyncIterator[str]) -> AsyncIterator[str]:
+    """Yield complete SSE data payloads, including multi-line data fields."""
+    data_lines: list[str] = []
+    async for line in lines:
+        if line == "":
+            if data_lines:
+                yield "\n".join(data_lines)
+                data_lines = []
+            continue
+        if line.startswith(":"):
+            continue
+        field, separator, value = line.partition(":")
+        if field != "data":
+            continue
+        if separator and value.startswith(" "):
+            value = value[1:]
+        data_lines.append(value)
+
+    if data_lines:
+        yield "\n".join(data_lines)
+
+
 async def stream_answer(messages: list[dict]) -> AsyncIterator[str]:
     api_key, base_url, model = _settings()
     timeout = httpx.Timeout(90.0, connect=10.0, read=90.0)
@@ -76,14 +98,11 @@ async def stream_answer(messages: list[dict]) -> AsyncIterator[str]:
             json={"model": model, "messages": messages, "temperature": 0.2, "stream": True},
         ) as response:
             response.raise_for_status()
-            async for line in response.aiter_lines():
-                if not line.startswith("data:"):
-                    continue
-                data = line[5:].strip()
-                if not data:
-                    continue
+            async for data in _iter_sse_data(response.aiter_lines()):
                 if data == "[DONE]":
                     break
+                if not data:
+                    continue
                 payload = json.loads(data)
                 choices = payload.get("choices") or []
                 if not choices:

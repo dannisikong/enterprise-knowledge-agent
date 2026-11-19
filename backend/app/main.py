@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import json
+import logging
 from typing import Literal
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -20,6 +21,9 @@ from app.services.llm_service import (
     llm_configured,
     stream_answer,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -143,6 +147,7 @@ async def chat_stream(request: ChatRequest):
                 yield event("token", {"content": token})
             yield event("done", {})
         except Exception:
+            logger.exception("LLM streaming response failed")
             yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。"})
 
     return StreamingResponse(
