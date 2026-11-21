@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 import json
 import logging
+import os
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
@@ -25,7 +26,7 @@ from app.services.llm_service import (
     validate_model_config,
 )
 from app.schemas.session import SessionResponse
-from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions
+from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions, delete_sessions
 from app.services.rate_limit_service import rate_limiter
 
 
@@ -36,8 +37,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     initialize_storage()
     initialize_sessions()
-    expired = cleanup_expired_sessions()
-    cleanup_session_documents(expired)
+    cleanup_expired_data()
     yield
 
 
@@ -49,7 +49,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in __import__("os").getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if origin.strip()],
+    allow_origins=[origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -70,7 +70,14 @@ class ChatRequest(BaseModel):
     model_settings: ModelConfig | None = None
 
 
+def cleanup_expired_data() -> None:
+    expired = cleanup_expired_sessions()
+    cleanup_session_documents(expired)
+    delete_sessions(expired)
+
+
 async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
+    cleanup_expired_data()
     session = get_session(x_session_token)
     if session is None:
         raise HTTPException(status_code=401, detail="A valid demo session is required.")
