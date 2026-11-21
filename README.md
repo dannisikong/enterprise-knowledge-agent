@@ -115,7 +115,7 @@ docker compose up --build
 
 ## API
 
-- `GET /health` — service health
+- `GET /health` — service health\n- `POST /session` — create an anonymous session and receive its token\n- `POST /model/test` — test a visitor-supplied chat model configuration
 - `POST /documents` — upload and parse a document (multipart field: `file`)
 - `GET /documents` — list documents and chunk/vector counts
 - `GET /documents/{id}/text` — inspect extracted text
@@ -141,7 +141,7 @@ SSE events:
 - `done`: generation completed
 - `error`: generation failed
 
-The frontend consumes the SSE stream using Fetch and a readable stream, so the POST request body and browser streaming are both supported.
+The frontend consumes the SSE stream using Fetch and a readable stream, so the POST request body and browser streaming are both supported. All document, search, chat and model-test endpoints require the `X-Session-Token` header returned by `POST /session`.
 
 
 ## Public demo deployment (Render Free)
@@ -179,7 +179,7 @@ Never expose a backend provider key in frontend environment variables or commit 
 - Evaluation script: `backend/scripts/evaluate_retrieval.py`
 - Metrics: single-gold-passage Recall@K and MRR
 
-Run the API, upload the sample handbook, then run `python scripts/evaluate_retrieval.py` from `backend`.
+Run the API and upload the sample handbook. **Compatibility note:** the legacy `scripts/evaluate_retrieval.py` utility currently does not create or send an anonymous session token, so it cannot call the authenticated `/search` endpoint until that script is updated. It is intentionally not changed in this P6 scope.
 
 ## Current limitations
 
