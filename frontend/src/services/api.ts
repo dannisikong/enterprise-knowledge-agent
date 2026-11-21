@@ -19,5 +19,11 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   const token = await ensureSession();
   const headers = new Headers(init.headers);
   headers.set("X-Session-Token", token);
-  return fetch(apiUrl(path), { ...init, headers });
+  const response = await fetch(apiUrl(path), { ...init, headers });
+  if (response.status !== 401 || path === "/session") return response;
+  sessionStorage.removeItem(SESSION_KEY);
+  const renewedToken = await ensureSession();
+  const retryHeaders = new Headers(init.headers);
+  retryHeaders.set("X-Session-Token", renewedToken);
+  return fetch(apiUrl(path), { ...init, headers: retryHeaders });
 }
