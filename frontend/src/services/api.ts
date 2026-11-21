@@ -1,4 +1,4 @@
-const configuredBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\\/$/, "");
+const configuredBase = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const apiUrl = (path: string) => configuredBase ? configuredBase + path : "/api" + path;
 
 type SessionPayload = { session_id: string; token: string; expires_at: string };
