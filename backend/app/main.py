@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from app.schemas.model_config import ModelConfig, ModelTestResponse
 
 from app.services.document_service import (
     get_document_text,
@@ -21,6 +22,7 @@ from app.services.llm_service import (
     generate_answer,
     llm_configured,
     stream_answer,
+    validate_model_config,
 )
 from app.schemas.session import SessionResponse
 from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions
@@ -65,8 +67,7 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=10)
     rerank: bool = False
-
-
+    model_config: ModelConfig | None = None
 
 
 async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
@@ -81,6 +82,24 @@ async def require_session(x_session_token: str | None = Header(default=None)) ->
 @app.post("/session", response_model=SessionResponse, tags=["session"])
 async def new_session() -> dict[str, str]:
     return create_session()
+
+
+
+
+@app.post("/model/test", response_model=ModelTestResponse, tags=["model"])
+async def test_model(config: ModelConfig, session: dict = Depends(require_session)) -> dict:
+    try:
+        validate_model_config(config)
+        await generate_answer(
+            [{"role": "user", "content": "Reply with the single word OK."}],
+            config,
+        )
+        return {"ok": True, "message": "Model connection successful."}
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        logger.warning("Model connection test failed for session %s", session["id"])
+        raise HTTPException(status_code=502, detail="Model connection failed. Check the Base URL, model and API key.") from error
 
 
 @app.get("/health", tags=["system"])
@@ -122,8 +141,8 @@ async def search(request: SearchRequest, session: dict = Depends(require_session
 
 
 async def _retrieve_for_chat(request: ChatRequest, session_id: str) -> tuple[list[dict], list[dict]]:
-    if not llm_configured():
-        raise HTTPException(status_code=503, detail="LLM_API_KEY is not configured.")
+    if not llm_configured(request.model_config):
+        raise HTTPException(status_code=503, detail="Please configure a valid chat model in Model Settings.")
     try:
         retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
     except ValueError as error:
@@ -142,7 +161,7 @@ async def chat(request: ChatRequest, session: dict = Depends(require_session)) -
             "retrieval": {"mode": "hybrid", "result_count": 0},
         }
     try:
-        answer = await generate_answer(messages)
+        answer = await generate_answer(messages, request.model_config)
     except Exception as error:
         raise HTTPException(status_code=502, detail="LLM provider request failed.") from error
     return {
@@ -166,7 +185,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
             yield event("done", {})
             return
         try:
-            async for token in stream_answer(messages):
+            async for token in stream_answer(messages, request.model_config):
                 yield event("token", {"content": token})
             yield event("done", {})
         except Exception:
