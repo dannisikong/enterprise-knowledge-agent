@@ -1,7 +1,7 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { readSSEStream } from "./services/stream";
 import ChatMessage from "./components/chat/ChatMessage";
-import ModelSettings, { ModelSettingsValue } from "./components/settings/ModelSettings";
+import ModelSettings, { type ModelSettingsValue } from "./components/settings/ModelSettings";
 import { apiFetch, ensureSession } from "./services/api";
 import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen, Settings } from "lucide-react";
 
@@ -58,7 +58,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetch("/api/health").then((response) => {
+    ensureSession().then(() => apiFetch("/health")).then((response) => {
       if (!response.ok) throw new Error("API unavailable");
       setHealth("ok");
       return loadDocuments();
