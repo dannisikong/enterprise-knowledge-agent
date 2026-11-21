@@ -168,7 +168,7 @@ async def chat(request: ChatRequest, session: dict = Depends(require_session)) -
             "retrieval": {"mode": "hybrid", "result_count": 0},
         }
     try:
-        answer = await generate_answer(messages, request.model_config)
+        answer = await generate_answer(messages, request.model_settings)
     except Exception as error:
         raise HTTPException(status_code=502, detail="LLM provider request failed.") from error
     return {
@@ -192,7 +192,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
             yield event("done", {})
             return
         try:
-            async for token in stream_answer(messages, request.model_config):
+            async for token in stream_answer(messages, request.model_settings):
                 yield event("token", {"content": token})
             yield event("done", {})
         except Exception:
