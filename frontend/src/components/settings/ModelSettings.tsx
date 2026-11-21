@@ -16,7 +16,7 @@ type Props = {
   status: string;
 };
 
-export default function ModelSettings({ value, onChange, onSave, onClear, onTest, testing, status }: Props) {
+export default function ModelSettings({ value, onSave, onClear, onTest, testing, status }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
