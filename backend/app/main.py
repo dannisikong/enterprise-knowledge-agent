@@ -67,7 +67,7 @@ class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=10)
     rerank: bool = False
-    model_config: ModelConfig | None = None
+    model_settings: ModelConfig | None = None
 
 
 async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
@@ -141,7 +141,7 @@ async def search(request: SearchRequest, session: dict = Depends(require_session
 
 
 async def _retrieve_for_chat(request: ChatRequest, session_id: str) -> tuple[list[dict], list[dict]]:
-    if not llm_configured(request.model_config):
+    if not llm_configured(request.model_settings):
         raise HTTPException(status_code=503, detail="Please configure a valid chat model in Model Settings.")
     try:
         retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
