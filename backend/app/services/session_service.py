@@ -80,7 +80,6 @@ def get_session(token: str | None, *, touch: bool = True) -> dict | None:
         except (TypeError, ValueError):
             return None
         if expires_at <= now:
-            connection.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
             return None
         if touch:
             new_expiry = now + timedelta(hours=SESSION_TTL_HOURS)
@@ -101,7 +100,13 @@ def cleanup_expired_sessions(batch_size: int = 100) -> list[str]:
             (now, max(1, min(batch_size, 1000))),
         ).fetchall()
         ids = [row["id"] for row in rows]
-        if ids:
-            placeholders = ",".join("?" for _ in ids)
-            connection.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", ids)
     return ids
+
+
+def delete_sessions(session_ids: list[str]) -> None:
+    if not session_ids:
+        return
+    initialize_sessions()
+    placeholders = ",".join("?" for _ in session_ids)
+    with _connect() as connection:
+        connection.execute(f"DELETE FROM sessions WHERE id IN ({placeholders})", session_ids)
