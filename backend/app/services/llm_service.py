@@ -54,8 +54,10 @@ def validate_model_config(config) -> tuple[str, str, str]:
 
 
 def llm_configured(config=None) -> bool:
+    if config is None:
+        return all(_config_values())
     try:
-        validate_model_config(config) if config is not None else _config_values()[0] and _config_values()[1] and _config_values()[2]
+        validate_model_config(config)
         return True
     except (ValueError, RuntimeError):
         return False
