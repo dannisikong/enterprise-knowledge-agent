@@ -24,7 +24,7 @@
 5. Compare keyword retrieval, vector cosine similarity and hybrid retrieval.
 6. Fuse independent keyword/vector rankings with RRF; optionally rerank candidates.
 7. Generate grounded answers from retrieved chunks and attach numbered source citations.
-8. Stream answer tokens and source metadata over SSE.
+8. Stream answer tokens and source metadata over SSE.\n9. Give each visitor an isolated temporary knowledge base using an anonymous session token.\n10. Let visitors supply their own chat model API key, Base URL and model name for the current page session.
 
 ## Run in GitHub Codespaces
 
@@ -143,7 +143,35 @@ SSE events:
 
 The frontend consumes the SSE stream using Fetch and a readable stream, so the POST request body and browser streaming are both supported.
 
-## Retrieval experiment and evaluation
+
+## Public demo deployment (Render Free)
+
+The demo can be deployed as two Render services:
+
+1. Create a **Static Site** from the repository and set its root directory to `frontend`.
+   - Build command: `npm install && npm run build`
+   - Publish directory: `dist`
+   - Set `VITE_API_BASE_URL` to the public HTTPS URL of the backend Web Service, without a trailing slash.
+2. Create a **Web Service** from the repository and set its root directory to `backend`.
+   - Runtime: Docker
+   - Set `CORS_ORIGINS` to the exact public frontend URL.
+   - Set `DATA_DIR` to a writable directory if needed (for example `/tmp/knowledge-data`).
+   - Render supplies `PORT`; the Docker command uses it automatically.
+   - Health check path: `/health`.
+
+The free Web Service is suitable only for a trial/demo. It may spin down after inactivity and take time to wake. Its local filesystem is ephemeral: SQLite data and uploaded files can disappear after restart, redeploy or instance replacement. Free instances do not support Persistent Disks. Do not upload confidential or irreplaceable documents, and do not promise visitors persistent storage.
+
+### Anonymous sessions and model credentials
+
+- A browser receives a random anonymous session token. The server stores only its SHA-256 hash; the browser stores the token in `sessionStorage`.
+- Each session's uploaded documents, extracted text, chunks, retrieval results and citations are isolated. Sessions expire after 24 hours of inactivity; expired records and uploaded files are cleaned in batches during startup and API requests.
+- Visitors configure the chat model in **模型设置**. The API key is held in page memory and sent only with the model test/chat request. It is not stored in SQLite, browser persistent storage or frontend build output. Refreshing the page clears the key.
+- Custom model Base URLs must use HTTPS on port 443 and resolve to public IP addresses. Redirects are disabled. This is a demo-level SSRF guard, not a substitute for a production egress allowlist or network firewall.
+- Embedding and reranking credentials remain server-side environment variables (`OPENAI_API_KEY`, `RERANK_API_KEY`); visitors cannot change them.
+- The in-memory rate limiter resets on process restart and is not production-grade abuse protection.
+
+Never expose a backend provider key in frontend environment variables or commit real credentials.
+\n## Retrieval experiment and evaluation
 
 - Sample document: `samples/employee-handbook.md`
 - Comparison guide: `docs/retrieval-experiment.md`
@@ -161,7 +189,7 @@ Run the API, upload the sample handbook, then run `python scripts/evaluate_retri
 - Keyword matching is a lightweight token-presence baseline, not BM25 or production-grade Chinese full-text search.
 - RRF cannot compensate for missing retrieval candidates; the evaluation dataset is small and not a production benchmark.
 - The RAG prompt asks the model to cite retrieved source IDs, but LLM output is not yet independently verified against each claim. Treat citations as model-generated references, not a formal guarantee.
-- Authentication, tenant isolation, permissions, OCR, background jobs, observability and production deployment are not implemented.
+- This demo uses anonymous session isolation, not verified user authentication or enterprise authorization.\n- The free Render filesystem is ephemeral; durable storage, distributed rate limiting, stronger outbound network controls, OCR, background jobs and production observability are not implemented.
 
 ## Roadmap
 
