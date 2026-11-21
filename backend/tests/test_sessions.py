@@ -22,4 +22,4 @@ def test_expired_session_is_rejected_and_cleaned(tmp_path, monkeypatch):
             ((datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(), created["session_id"]),
         )
     assert get_session(created["token"]) is None
-    assert cleanup_expired_sessions() == []
+    assert cleanup_expired_sessions() == [created["session_id"]]
