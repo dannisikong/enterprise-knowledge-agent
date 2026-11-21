@@ -28,3 +28,17 @@ def test_sse_parser_flushes_final_event_without_trailing_blank_line():
 
 def test_sse_parser_preserves_empty_data_field():
     assert collect_sse_data(["data:", ""]) == [""]
+
+
+
+def test_request_scoped_model_settings_are_used(monkeypatch):
+    from app.schemas.model_config import ModelConfig
+    from app.services import llm_service
+
+    monkeypatch.setattr(llm_service, "validate_model_config", lambda config: (
+        config.api_key, config.base_url.rstrip("/"), config.model
+    ))
+    config = ModelConfig(api_key="visitor-key-123", base_url="https://api.example.com/v1", model="visitor-model")
+    assert llm_service._settings(config) == (
+        "visitor-key-123", "https://api.example.com/v1", "visitor-model"
+    )
