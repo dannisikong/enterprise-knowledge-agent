@@ -3,7 +3,7 @@ import json
 import logging
 from typing import Literal
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -14,6 +14,7 @@ from app.services.document_service import (
     list_documents,
     search_chunks,
     upload_document,
+    cleanup_session_documents,
 )
 from app.services.llm_service import (
     build_grounded_messages,
@@ -21,6 +22,9 @@ from app.services.llm_service import (
     llm_configured,
     stream_answer,
 )
+from app.schemas.session import SessionResponse
+from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions
+from app.services.rate_limit_service import rate_limiter
 
 
 logger = logging.getLogger(__name__)
@@ -29,6 +33,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     initialize_storage()
+    initialize_sessions()
+    expired = cleanup_expired_sessions()
+    cleanup_session_documents(expired)
     yield
 
 
@@ -40,7 +47,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[origin.strip() for origin in __import__("os").getenv("CORS_ORIGINS", "http://localhost:5173").split(",") if origin.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -60,15 +67,31 @@ class ChatRequest(BaseModel):
     rerank: bool = False
 
 
+
+
+async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
+    session = get_session(x_session_token)
+    if session is None:
+        raise HTTPException(status_code=401, detail="A valid demo session is required.")
+    if not rate_limiter.allow(session["id"]):
+        raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
+    return session
+
+
+@app.post("/session", response_model=SessionResponse, tags=["session"])
+async def new_session() -> dict[str, str]:
+    return create_session()
+
+
 @app.get("/health", tags=["system"])
 async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "enterprise-knowledge-agent"}
 
 
 @app.post("/documents", tags=["documents"])
-async def create_document(file: UploadFile = File(...)) -> dict:
+async def create_document(file: UploadFile = File(...), session: dict = Depends(require_session)) -> dict:
     try:
-        return await upload_document(file)
+        return await upload_document(file, session["id"])
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
@@ -78,31 +101,31 @@ async def create_document(file: UploadFile = File(...)) -> dict:
 
 
 @app.get("/documents", tags=["documents"])
-async def documents() -> list[dict]:
-    return list_documents()
+async def documents(session: dict = Depends(require_session)) -> list[dict]:
+    return list_documents(session["id"])
 
 
 @app.get("/documents/{document_id}/text", tags=["documents"])
-async def document_text(document_id: str) -> dict:
-    document = get_document_text(document_id)
+async def document_text(document_id: str, session: dict = Depends(require_session)) -> dict:
+    document = get_document_text(document_id, session["id"])
     if document is None:
         raise HTTPException(status_code=404, detail="Document not found.")
     return document
 
 
 @app.post("/search", tags=["retrieval"])
-async def search(request: SearchRequest) -> dict:
+async def search(request: SearchRequest, session: dict = Depends(require_session)) -> dict:
     try:
-        return await search_chunks(request.query, request.limit, request.mode, request.rerank)
+        return await search_chunks(request.query, request.limit, request.mode, request.rerank, session["id"])
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-async def _retrieve_for_chat(request: ChatRequest) -> tuple[list[dict], list[dict]]:
+async def _retrieve_for_chat(request: ChatRequest, session_id: str) -> tuple[list[dict], list[dict]]:
     if not llm_configured():
         raise HTTPException(status_code=503, detail="LLM_API_KEY is not configured.")
     try:
-        retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank)
+        retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     messages, sources = build_grounded_messages(request.query, retrieval["results"])
@@ -110,8 +133,8 @@ async def _retrieve_for_chat(request: ChatRequest) -> tuple[list[dict], list[dic
 
 
 @app.post("/chat", tags=["chat"])
-async def chat(request: ChatRequest) -> dict:
-    messages, sources = await _retrieve_for_chat(request)
+async def chat(request: ChatRequest, session: dict = Depends(require_session)) -> dict:
+    messages, sources = await _retrieve_for_chat(request, session["id"])
     if not sources:
         return {
             "answer": "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。",
@@ -130,8 +153,8 @@ async def chat(request: ChatRequest) -> dict:
 
 
 @app.post("/chat/stream", tags=["chat"])
-async def chat_stream(request: ChatRequest):
-    messages, sources = await _retrieve_for_chat(request)
+async def chat_stream(request: ChatRequest, session: dict = Depends(require_session)):
+    messages, sources = await _retrieve_for_chat(request, session["id"])
 
     async def event_stream():
         def event(name: str, payload: dict) -> str:
