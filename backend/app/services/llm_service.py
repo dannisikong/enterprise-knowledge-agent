@@ -7,17 +7,67 @@ from collections.abc import AsyncIterator
 import httpx
 
 
-def llm_configured() -> bool:
-    return bool(os.getenv("LLM_API_KEY"))
+import ipaddress
+import socket
+from urllib.parse import urlsplit
 
 
-def _settings() -> tuple[str, str, str]:
-    api_key = os.getenv("LLM_API_KEY")
-    if not api_key:
-        raise RuntimeError("LLM_API_KEY is not configured.")
-    base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-    model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-    return api_key, base_url, model
+def _config_values(config=None) -> tuple[str, str, str]:
+    if config is not None:
+        values = config.model_dump() if hasattr(config, "model_dump") else dict(config)
+        return str(values.get("api_key", "")).strip(), str(values.get("base_url", "")).strip(), str(values.get("model", "")).strip()
+    return (
+        os.getenv("LLM_API_KEY", "").strip(),
+        os.getenv("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
+        os.getenv("LLM_MODEL", "gpt-4o-mini"),
+    )
+
+
+def validate_model_config(config) -> tuple[str, str, str]:
+    api_key, base_url, model = _config_values(config)
+    if not api_key or len(api_key) > 512:
+        raise ValueError("Enter a valid model API key.")
+    if not model or len(model) > 128:
+        raise ValueError("Enter a valid model name.")
+    parsed = urlsplit(base_url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("Model Base URL must be a valid HTTPS URL without credentials, query or fragment.")
+    hostname = parsed.hostname.lower().rstrip(".")
+    if hostname in {"localhost", "metadata.google.internal"} or hostname.endswith((".localhost", ".local", ".内部")):
+        raise ValueError("Local and private network addresses are not allowed.")
+    try:
+        port = parsed.port or 443
+        if port != 443:
+            raise ValueError("Only HTTPS port 443 is allowed.")
+        try:
+            literal = ipaddress.ip_address(hostname)
+            addresses = [literal]
+        except ValueError:
+            addresses = [ipaddress.ip_address(item[4][0]) for item in socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)]
+        if not addresses or any(not address.is_global for address in addresses):
+            raise ValueError("Model Base URL must resolve only to public IP addresses.")
+    except (OSError, ValueError) as error:
+        if isinstance(error, ValueError) and str(error).startswith("Model Base URL"):
+            raise
+        raise ValueError("Unable to validate the public Model Base URL.") from error
+    return api_key, base_url.rstrip("/"), model
+
+
+def llm_configured(config=None) -> bool:
+    try:
+        validate_model_config(config) if config is not None else _config_values()[0] and _config_values()[1] and _config_values()[2]
+        return True
+    except (ValueError, RuntimeError):
+        return False
+
+
+def _settings(config=None) -> tuple[str, str, str]:
+    if config is not None:
+        return validate_model_config(config)
+    values = _config_values()
+    if not all(values):
+        raise RuntimeError("Chat model is not configured.")
+    return values
 
 
 def build_grounded_messages(question: str, results: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -51,10 +101,10 @@ def build_grounded_messages(question: str, results: list[dict]) -> tuple[list[di
     return [{"role": "system", "content": system}, {"role": "user", "content": user}], sources
 
 
-async def generate_answer(messages: list[dict]) -> str:
-    api_key, base_url, model = _settings()
+async def generate_answer(messages: list[dict], config=None) -> str:
+    api_key, base_url, model = _settings(config)
     timeout = httpx.Timeout(90.0, connect=10.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
         response = await client.post(
             f"{base_url}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}"},
@@ -87,10 +137,10 @@ async def _iter_sse_data(lines: AsyncIterator[str]) -> AsyncIterator[str]:
         yield "\n".join(data_lines)
 
 
-async def stream_answer(messages: list[dict]) -> AsyncIterator[str]:
-    api_key, base_url, model = _settings()
+async def stream_answer(messages: list[dict], config=None) -> AsyncIterator[str]:
+    api_key, base_url, model = _settings(config)
     timeout = httpx.Timeout(90.0, connect=10.0, read=90.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
         async with client.stream(
             "POST",
             f"{base_url}/chat/completions",
