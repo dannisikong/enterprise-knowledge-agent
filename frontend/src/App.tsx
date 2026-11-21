@@ -1,7 +1,9 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { readSSEStream } from "./services/stream";
 import ChatMessage from "./components/chat/ChatMessage";
-import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen } from "lucide-react";
+import ModelSettings, { ModelSettingsValue } from "./components/settings/ModelSettings";
+import { apiFetch, ensureSession } from "./services/api";
+import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen, Settings } from "lucide-react";
 
 type KnowledgeDocument = {
   id: string; filename: string; size: number; status: string;
@@ -27,6 +29,10 @@ const modeSubtitle: Record<SearchMode, string> = { keyword: "Keyword Search", ve
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
+  const [showModelSettings, setShowModelSettings] = useState(false);
+  const [modelSettings, setModelSettings] = useState<ModelSettingsValue>({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" });
+  const [modelTesting, setModelTesting] = useState(false);
+  const [modelStatus, setModelStatus] = useState("");
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -46,7 +52,7 @@ export default function App() {
   const chatAbortRef = useRef<AbortController | null>(null);
 
   const loadDocuments = async () => {
-    const response = await fetch("/api/documents");
+    const response = await apiFetch("/documents");
     if (!response.ok) throw new Error("无法加载文档列表");
     setDocuments(await response.json() as KnowledgeDocument[]);
   };
@@ -66,7 +72,7 @@ export default function App() {
     setUploading(true); setMessage(""); setError("");
     const body = new FormData(); body.append("file", file);
     try {
-      const response = await fetch("/api/documents", { method: "POST", body });
+      const response = await apiFetch("/documents", { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "上传失败");
       setMessage("已完成解析与分块：" + result.filename + "，共 " + result.chunk_count + " 个文本块；向量状态：" + (result.embedding_status === "indexed" ? "已建立" : "待配置 Embedding API"));
@@ -83,7 +89,7 @@ export default function App() {
     const modes: SearchMode[] = ["keyword", "vector", "hybrid"];
     const outcomes = await Promise.all(modes.map(async (mode): Promise<ComparisonResult> => {
       try {
-        const response = await fetch("/api/search", {
+        const response = await apiFetch("/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: query.trim(), limit: 5, mode, rerank: mode === "hybrid" && rerankEnabled }),
         });
@@ -119,10 +125,10 @@ export default function App() {
     setHighlightedSourceId(null);
 
     try {
-      const response = await fetch("/api/chat/stream", {
+      const response = await apiFetch("/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: question, limit: 5, rerank: rerankEnabled }),
+        body: JSON.stringify({ query: question, limit: 5, rerank: rerankEnabled, model_settings: modelSettings.api_key.trim() ? modelSettings : undefined }),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -166,6 +172,21 @@ export default function App() {
     }
   };
 
+  const handleTestModel = async () => {
+    setModelTesting(true); setModelStatus("");
+    try {
+      const response = await apiFetch("/model/test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(modelSettings),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "模型连接失败");
+      setModelStatus(result.message || "模型连接成功");
+    } catch (testError) {
+      setModelStatus(testError instanceof Error ? testError.message : "模型连接失败");
+    } finally { setModelTesting(false); }
+  };
+
   const toggleSource = (id: number) => setExpandedSources((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   const handleCitationClick = (id: number) => {
@@ -205,8 +226,8 @@ export default function App() {
       <div className="sidebar-bottom"><div className={"status-dot " + (health === "ok" ? "online" : "")} /><span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span></div>
     </aside>
     <section className="main-panel">
-      <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="secure"><ShieldCheck size={16} /> 企业知识安全空间</div></header>
-      <section className="welcome">
+      <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="topbar-actions"><button className="settings-trigger" onClick={() => setShowModelSettings(current => !current)}><Settings size={15} /> 模型设置</button><div className="secure"><ShieldCheck size={16} /> 独立临时知识库</div></div></header>
+      {showModelSettings && <ModelSettings value={modelSettings} onChange={setModelSettings} onSave={() => setModelStatus("配置已保存在当前页面内存中。刷新后需要重新输入 API Key。")} onClear={() => { setModelSettings({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" }); setModelStatus("模型配置已清除。"); }} onTest={handleTestModel} testing={modelTesting} status={modelStatus} />}\n      <section className="welcome">
         <div className="welcome-icon"><Sparkles size={22} /></div>
         <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
         <h2>让企业知识，随问随答</h2>
