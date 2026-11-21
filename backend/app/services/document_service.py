@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import sqlite3
 from datetime import datetime, timezone
@@ -17,7 +18,7 @@ from app.services.embedding_service import create_embeddings, embeddings_configu
 from app.services.retrieval import keyword_score, reciprocal_rank_fusion
 from app.services.reranker_service import rerank_documents, reranker_configured
 
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).resolve().parents[2] / "data")))
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "knowledge.db"
 MAX_FILE_SIZE = 10 * 1024 * 1024
@@ -41,9 +42,14 @@ def initialize_storage() -> None:
                 size INTEGER NOT NULL,
                 status TEXT NOT NULL,
                 extracted_text TEXT NOT NULL,
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                session_id TEXT
             )
         """)
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(documents)").fetchall()}
+        if "session_id" not in columns:
+            connection.execute("ALTER TABLE documents ADD COLUMN session_id TEXT")
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_documents_session_id ON documents(session_id)")
         connection.execute("""
             CREATE TABLE IF NOT EXISTS document_chunks (
                 id TEXT PRIMARY KEY,
@@ -81,7 +87,7 @@ def _clean_text(value: str) -> str:
     return value.strip()
 
 
-async def upload_document(file: UploadFile) -> dict:
+async def upload_document(file: UploadFile, session_id: str) -> dict:
     original_name = Path(file.filename or "document").name
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
@@ -113,8 +119,8 @@ async def upload_document(file: UploadFile) -> dict:
         content_type = file.content_type or "application/octet-stream"
         with _connect() as connection:
             connection.execute(
-                "INSERT INTO documents (id, filename, content_type, size, status, extracted_text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (document_id, original_name, content_type, len(content), "ready", extracted_text, created_at),
+                "INSERT INTO documents (id, filename, content_type, size, status, extracted_text, created_at, session_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (document_id, original_name, content_type, len(content), "ready", extracted_text, created_at, session_id),
             )
             connection.executemany(
                 "INSERT INTO document_chunks (id, document_id, chunk_index, content, embedding, created_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -139,7 +145,7 @@ async def upload_document(file: UploadFile) -> dict:
         raise
 
 
-def list_documents() -> list[dict]:
+def list_documents(session_id: str) -> list[dict]:
     initialize_storage()
     with _connect() as connection:
         rows = connection.execute("""
@@ -149,17 +155,18 @@ def list_documents() -> list[dict]:
                    SUM(CASE WHEN c.embedding IS NOT NULL THEN 1 ELSE 0 END) AS embedded_chunk_count
             FROM documents d
             LEFT JOIN document_chunks c ON c.document_id = d.id
+            WHERE d.session_id = ?
             GROUP BY d.id
             ORDER BY d.created_at DESC
-        """).fetchall()
+        """, (session_id,)).fetchall()
     return [dict(row) for row in rows]
 
 
-def get_document_text(document_id: str) -> dict | None:
+def get_document_text(document_id: str, session_id: str) -> dict | None:
     initialize_storage()
     with _connect() as connection:
         row = connection.execute(
-            "SELECT id, filename, extracted_text FROM documents WHERE id = ?", (document_id,)
+            "SELECT id, filename, extracted_text FROM documents WHERE id = ? AND session_id = ?", (document_id, session_id)
         ).fetchone()
     return dict(row) if row else None
 
@@ -195,7 +202,7 @@ def _result_from_row(row, score: float) -> dict:
     }
 
 
-async def search_chunks(query: str, limit: int = 5, mode: str = "auto", rerank: bool = False) -> dict:
+async def search_chunks(query: str, limit: int = 5, mode: str = "auto", rerank: bool = False, session_id: str | None = None) -> dict:
     initialize_storage()
     query = query.strip()
     if not query:
@@ -209,7 +216,8 @@ async def search_chunks(query: str, limit: int = 5, mode: str = "auto", rerank: 
             SELECT c.id, c.document_id, c.chunk_index, c.content, c.embedding, d.filename
             FROM document_chunks c
             JOIN documents d ON d.id = c.document_id
-        """).fetchall()
+            WHERE d.session_id = ?
+        """, (session_id,)).fetchall()
 
     keyword_results = _rank_keyword(rows, query) if mode in {"keyword", "hybrid", "auto"} else []
     wants_vector = mode in {"vector", "hybrid", "auto"}
@@ -281,3 +289,24 @@ async def search_chunks(query: str, limit: int = 5, mode: str = "auto", rerank: 
         "fusion": "reciprocal_rank_fusion" if effective_mode == "hybrid" else None,
         "results": results,
     }
+
+
+def cleanup_session_documents(session_ids: list[str]) -> int:
+    """Delete expired sessions' document rows, chunks and stored upload files."""
+    if not session_ids:
+        return 0
+    initialize_storage()
+    deleted = 0
+    with _connect() as connection:
+        for session_id in session_ids:
+            rows = connection.execute(
+                "SELECT id FROM documents WHERE session_id = ?", (session_id,)
+            ).fetchall()
+            for row in rows:
+                document_id = row["id"]
+                for stored_path in UPLOAD_DIR.glob(f"{document_id}.*"):
+                    stored_path.unlink(missing_ok=True)
+                connection.execute("DELETE FROM document_chunks WHERE document_id = ?", (document_id,))
+                connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+                deleted += 1
+    return deleted

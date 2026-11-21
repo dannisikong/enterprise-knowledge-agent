@@ -1,5 +1,9 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen } from "lucide-react";
+import { readSSEStream } from "./services/stream";
+import ChatMessage from "./components/chat/ChatMessage";
+import ModelSettings, { type ModelSettingsValue } from "./components/settings/ModelSettings";
+import { apiFetch, ensureSession } from "./services/api";
+import { Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2, AlertCircle, Search, Send, BookOpen, Settings } from "lucide-react";
 
 type KnowledgeDocument = {
   id: string; filename: string; size: number; status: string;
@@ -25,6 +29,10 @@ const modeSubtitle: Record<SearchMode, string> = { keyword: "Keyword Search", ve
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
+  const [showModelSettings, setShowModelSettings] = useState(false);
+  const [modelSettings, setModelSettings] = useState<ModelSettingsValue>({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" });
+  const [modelTesting, setModelTesting] = useState(false);
+  const [modelStatus, setModelStatus] = useState("");
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -34,21 +42,23 @@ export default function App() {
   const [chatAnswer, setChatAnswer] = useState("");
   const [chatSources, setChatSources] = useState<ChatSource[]>([]);
   const [chatLoading, setChatLoading] = useState(false);
+  const [chatStatus, setChatStatus] = useState<"idle" | "connecting" | "streaming" | "completed" | "error" | "cancelled">("idle");
   const [chatError, setChatError] = useState("");
   const [expandedSources, setExpandedSources] = useState<number[]>([]);
+  const [highlightedSourceId, setHighlightedSourceId] = useState<number | null>(null);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const chatAbortRef = useRef<AbortController | null>(null);
 
   const loadDocuments = async () => {
-    const response = await fetch("/api/documents");
+    const response = await apiFetch("/documents");
     if (!response.ok) throw new Error("无法加载文档列表");
     setDocuments(await response.json() as KnowledgeDocument[]);
   };
 
   useEffect(() => {
-    fetch("/api/health").then((response) => {
+    ensureSession().then(() => apiFetch("/health")).then((response) => {
       if (!response.ok) throw new Error("API unavailable");
       setHealth("ok");
       return loadDocuments();
@@ -62,7 +72,7 @@ export default function App() {
     setUploading(true); setMessage(""); setError("");
     const body = new FormData(); body.append("file", file);
     try {
-      const response = await fetch("/api/documents", { method: "POST", body });
+      const response = await apiFetch("/documents", { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "上传失败");
       setMessage("已完成解析与分块：" + result.filename + "，共 " + result.chunk_count + " 个文本块；向量状态：" + (result.embedding_status === "indexed" ? "已建立" : "待配置 Embedding API"));
@@ -79,7 +89,7 @@ export default function App() {
     const modes: SearchMode[] = ["keyword", "vector", "hybrid"];
     const outcomes = await Promise.all(modes.map(async (mode): Promise<ComparisonResult> => {
       try {
-        const response = await fetch("/api/search", {
+        const response = await apiFetch("/search", {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: query.trim(), limit: 5, mode, rerank: mode === "hybrid" && rerankEnabled }),
         });
@@ -102,15 +112,23 @@ export default function App() {
     event.preventDefault();
     const question = query.trim();
     if (!question || chatLoading) return;
+
     chatAbortRef.current?.abort();
     const controller = new AbortController();
     chatAbortRef.current = controller;
-    setChatLoading(true); setChatError(""); setChatAnswer(""); setChatSources([]); setExpandedSources([]);
+    setChatLoading(true);
+    setChatStatus("connecting");
+    setChatError("");
+    setChatAnswer("");
+    setChatSources([]);
+    setExpandedSources([]);
+    setHighlightedSourceId(null);
+
     try {
-      const response = await fetch("/api/chat/stream", {
+      const response = await apiFetch("/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: question, limit: 5, rerank: rerankEnabled }),
+        body: JSON.stringify({ query: question, limit: 5, rerank: rerankEnabled, model_settings: modelSettings.api_key.trim() ? modelSettings : undefined }),
         signal: controller.signal,
       });
       if (!response.ok) {
@@ -118,40 +136,70 @@ export default function App() {
         throw new Error(payload.detail || "问答请求失败");
       }
       if (!response.body) throw new Error("浏览器不支持流式响应");
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let streamError = "";
-      const processEvent = (raw: string) => {
-        const lines = raw.split("\n");
-        const eventName = lines.find((line) => line.startsWith("event:"))?.slice(6).trim();
-        const dataLine = lines.find((line) => line.startsWith("data:"))?.slice(5).trim();
-        if (!dataLine) return;
-        const payload = JSON.parse(dataLine);
-        if (eventName === "sources") setChatSources(payload.sources || []);
-        if (eventName === "token") setChatAnswer((current) => current + (payload.content || ""));
-        if (eventName === "error") streamError = payload.message || "生成失败";
-      };
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const events = buffer.split("\n\n");
-        buffer = events.pop() || "";
-        events.forEach(processEvent);
-        if (done) break;
+
+      let receivedDone = false;
+      for await (const message of readSSEStream(response.body)) {
+        if (message.event === "sources") {
+          const payload = JSON.parse(message.data);
+          setChatSources(payload.sources || []);
+          setChatStatus("streaming");
+        } else if (message.event === "token") {
+          const payload = JSON.parse(message.data);
+          setChatAnswer((current) => current + (payload.content || ""));
+          setChatStatus("streaming");
+        } else if (message.event === "error") {
+          const payload = JSON.parse(message.data);
+          throw new Error(payload.message || "生成失败");
+        } else if (message.event === "done") {
+          receivedDone = true;
+          setChatStatus("completed");
+        }
       }
-      if (buffer.trim()) processEvent(buffer);
-      if (streamError) throw new Error(streamError);
+
+      if (!receivedDone) throw new Error("流式响应意外结束，请重试。");
     } catch (chatException) {
-      if (chatException instanceof Error && chatException.name === "AbortError") return;
+      if (chatException instanceof Error && chatException.name === "AbortError") {
+        setChatStatus("cancelled");
+        return;
+      }
+      setChatStatus("error");
       setChatError(chatException instanceof Error ? chatException.message : "问答失败，请重试。");
     } finally {
-      if (chatAbortRef.current === controller) chatAbortRef.current = null;
-      setChatLoading(false);
+      if (chatAbortRef.current === controller) {
+        chatAbortRef.current = null;
+        setChatLoading(false);
+      }
     }
   };
 
+  const handleTestModel = async (config: ModelSettingsValue) => {
+    setModelTesting(true); setModelStatus("");
+    try {
+      const response = await apiFetch("/model/test", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(config),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "模型连接失败");
+      setModelStatus(result.message || "模型连接成功");
+    } catch (testError) {
+      setModelStatus(testError instanceof Error ? testError.message : "模型连接失败");
+    } finally { setModelTesting(false); }
+  };
+
   const toggleSource = (id: number) => setExpandedSources((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+
+  const handleCitationClick = (id: number) => {
+    if (!chatSources.some((source) => source.id === id)) return;
+    setExpandedSources((current) => current.includes(id) ? current : [...current, id]);
+    setHighlightedSourceId(id);
+    document.getElementById(`source-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  useEffect(() => {
+    if (highlightedSourceId === null) return;
+    document.getElementById(`source-${highlightedSourceId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [highlightedSourceId, chatSources]);
 
   const renderResults = (item: ComparisonResult) => <div className="comparison-column" key={item.mode}>
     <div className="comparison-heading"><div><strong>{modeTitle[item.mode]}</strong><span>{modeSubtitle[item.mode]}</span></div><span className="result-count">{item.error ? "不可用" : item.results.length + " 条结果"}</span></div>
@@ -178,7 +226,8 @@ export default function App() {
       <div className="sidebar-bottom"><div className={"status-dot " + (health === "ok" ? "online" : "")} /><span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span></div>
     </aside>
     <section className="main-panel">
-      <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="secure"><ShieldCheck size={16} /> 企业知识安全空间</div></header>
+      <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="topbar-actions"><button className="settings-trigger" onClick={() => setShowModelSettings(current => !current)}><Settings size={15} /> 模型设置</button><div className="secure"><ShieldCheck size={16} /> 独立临时知识库</div></div></header>
+      {showModelSettings && <ModelSettings value={modelSettings} onSave={(value) => { setModelSettings(value); setModelStatus("配置已保存在当前页面内存中。刷新后需要重新输入 API Key。"); }} onClear={() => { setModelSettings({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" }); setModelStatus("模型配置已清除。"); }} onTest={handleTestModel} testing={modelTesting} status={modelStatus} />}
       <section className="welcome">
         <div className="welcome-icon"><Sparkles size={22} /></div>
         <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
@@ -201,11 +250,11 @@ export default function App() {
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="向知识库提问，例如：员工年假有多少天？" />
           <button type="submit" disabled={chatLoading || !query.trim()}>{chatLoading ? <><Loader2 className="spin" size={14} /> 生成中</> : <><Send size={14} /> 提问</>}</button>
         </form>
-        {chatLoading && <div className="chat-streaming">正在检索资料并生成回答…</div>}
+        {chatLoading && <div className="chat-streaming">{chatStatus === "connecting" ? "正在连接问答服务…" : "正在检索资料并生成回答…"}</div>}
         {chatError && <div className="comparison-error"><AlertCircle size={15} />{chatError}</div>}
-        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><div className="answer-content">{chatAnswer}</div></article>}
+        {chatAnswer && <article className="answer-card"><div className="answer-heading"><Sparkles size={16} /> AI 回答</div><ChatMessage content={chatAnswer} sourceIds={chatSources.map((source) => source.id)} onCitationClick={handleCitationClick} /></article>}
         {chatSources.length > 0 && <div className="source-panel"><strong><BookOpen size={15} /> 参考来源（{chatSources.length}）</strong>
-          {chatSources.map((source) => <article className="source-item" key={source.id}>
+          {chatSources.map((source) => <article id={`source-${source.id}`} className={`source-item${highlightedSourceId === source.id ? " source-item-highlighted" : ""}`} key={source.id}>
             <button type="button" onClick={() => toggleSource(source.id)}><span>[{source.id}] {source.filename} · 片段 #{source.chunk_index + 1}</span><span>{expandedSources.includes(source.id) ? "收起" : "查看依据"}</span></button>
             {expandedSources.includes(source.id) && <p>{source.content}</p>}
           </article>)}
