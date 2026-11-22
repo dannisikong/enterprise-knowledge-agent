@@ -29,6 +29,7 @@ const modeSubtitle: Record<SearchMode, string> = { keyword: "Keyword Search", ve
 
 export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
+  const [activeSection, setActiveSection] = useState<"chat" | "documents">("chat");
   const [showModelSettings, setShowModelSettings] = useState(false);
   const [modelSettings, setModelSettings] = useState<ModelSettingsValue>({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" });
   const [modelTesting, setModelTesting] = useState(false);
@@ -187,6 +188,11 @@ export default function App() {
     } finally { setModelTesting(false); }
   };
 
+  const navigateToSection = (section: "chat" | "documents") => {
+    setActiveSection(section);
+    document.getElementById(section === "chat" ? "chat-section" : "documents-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const toggleSource = (id: number) => setExpandedSources((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   const handleCitationClick = (id: number) => {
@@ -221,8 +227,8 @@ export default function App() {
     <aside className="sidebar">
       <div className="brand"><span className="brand-mark"><Bot size={21} /></span><span>KnowFlow</span></div>
       <div className="workspace-label">工作空间</div>
-      <button className="nav-item active"><Sparkles size={17} /> 智能问答</button>
-      <button className="nav-item"><FileText size={17} /> 知识库</button>
+      <button className={`nav-item${activeSection === "chat" ? " active" : ""}`} onClick={() => navigateToSection("chat")}><Sparkles size={17} /> 智能问答</button>
+      <button className={`nav-item${activeSection === "documents" ? " active" : ""}`} onClick={() => navigateToSection("documents")}><FileText size={17} /> 知识库</button>
       <div className="sidebar-bottom"><div className={"status-dot " + (health === "ok" ? "online" : "")} /><span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span></div>
     </aside>
     <section className="main-panel">
@@ -243,7 +249,7 @@ export default function App() {
         {error && <div className="notice error"><AlertCircle size={16} />{error}</div>}
       </section>
 
-      <section className="chat-section">
+      <section id="chat-section" className="chat-section">
         <div className="section-heading"><div><h3><BookOpen size={16} /> 知识库问答</h3><p>Hybrid Retrieval → 可选 Reranker → LLM，答案通过 SSE 实时生成</p></div></div>
         <form className="search-form" onSubmit={handleChat}>
           <Search size={18} />
@@ -273,7 +279,7 @@ export default function App() {
         {comparison.length === 0 && <p className="comparison-hint">向量和混合检索需要先配置 Embedding API，并上传已生成向量的文档；否则混合检索会明确降级为关键词检索。</p>}
       </section>
 
-      <section className="documents-section">
+      <section id="documents-section" className="documents-section">
         <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
           <div className="document-list">{documents.map((document) => <article className="document-row" key={document.id}>
