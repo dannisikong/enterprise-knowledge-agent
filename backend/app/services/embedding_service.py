@@ -5,6 +5,10 @@ import os
 import httpx
 
 
+# Bailian text-embedding-v4 accepts at most 10 input texts per request.
+EMBEDDING_BATCH_SIZE = 10
+
+
 def embeddings_configured() -> bool:
     return bool(os.getenv("OPENAI_API_KEY"))
 
@@ -21,8 +25,8 @@ async def create_embeddings(texts: list[str]) -> list[list[float]] | None:
     vectors: list[list[float]] = []
 
     async with httpx.AsyncClient(timeout=timeout) as client:
-        for offset in range(0, len(texts), 64):
-            batch = texts[offset:offset + 64]
+        for offset in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+            batch = texts[offset:offset + EMBEDDING_BATCH_SIZE]
             response = await client.post(
                 f"{base_url}/embeddings",
                 headers={"Authorization": f"Bearer {api_key}"},
