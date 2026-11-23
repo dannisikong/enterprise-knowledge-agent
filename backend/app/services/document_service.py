@@ -112,8 +112,10 @@ async def upload_document(file: UploadFile, session_id: str) -> dict:
         if embeddings_configured():
             try:
                 vectors = await create_embeddings(chunks)
-            except Exception:
-                vectors = None
+                if vectors is None or len(vectors) != len(chunks):
+                    raise RuntimeError("Embedding provider returned an incomplete vector set.")
+            except Exception as error:
+                raise ValueError(f"Embedding generation failed: {error}") from error
 
         created_at = datetime.now(timezone.utc).isoformat()
         content_type = file.content_type or "application/octet-stream"
@@ -160,6 +162,67 @@ def list_documents(session_id: str) -> list[dict]:
             ORDER BY d.created_at DESC
         """, (session_id,)).fetchall()
     return [dict(row) for row in rows]
+
+
+async def reindex_documents(session_id: str) -> dict:
+    """Regenerate every chunk vector for documents owned by the current session."""
+    if not embeddings_configured():
+        raise ValueError("Embedding API is not configured on the backend.")
+
+    initialize_storage()
+    with _connect() as connection:
+        documents = connection.execute(
+            "SELECT id, filename FROM documents WHERE session_id = ? ORDER BY created_at",
+            (session_id,),
+        ).fetchall()
+
+    indexed = []
+    failed = []
+    for document in documents:
+        document_id = document["id"]
+        with _connect() as connection:
+            chunks = connection.execute(
+                "SELECT id, content FROM document_chunks WHERE document_id = ? ORDER BY chunk_index",
+                (document_id,),
+            ).fetchall()
+
+        if not chunks:
+            failed.append({"document_id": document_id, "filename": document["filename"], "error": "Document has no text chunks."})
+            continue
+
+        try:
+            vectors = await create_embeddings([row["content"] for row in chunks])
+            if vectors is None or len(vectors) != len(chunks):
+                raise RuntimeError("Embedding provider returned an incomplete vector set.")
+            dimensions = {len(vector) for vector in vectors}
+            if len(dimensions) != 1 or any(not vector for vector in vectors):
+                raise RuntimeError("Embedding provider returned inconsistent vector dimensions.")
+
+            with _connect() as connection:
+                connection.executemany(
+                    "UPDATE document_chunks SET embedding = ? WHERE id = ?",
+                    [(json.dumps(vector), row["id"]) for row, vector in zip(chunks, vectors)],
+                )
+            indexed.append({
+                "document_id": document_id,
+                "filename": document["filename"],
+                "chunk_count": len(chunks),
+                "embedded_chunk_count": len(vectors),
+            })
+        except Exception as error:
+            failed.append({
+                "document_id": document_id,
+                "filename": document["filename"],
+                "error": str(error)[:500],
+            })
+
+    return {
+        "total_documents": len(documents),
+        "indexed_documents": len(indexed),
+        "failed_documents": len(failed),
+        "indexed": indexed,
+        "failed": failed,
+    }
 
 
 def get_document_text(document_id: str, session_id: str) -> dict | None:
