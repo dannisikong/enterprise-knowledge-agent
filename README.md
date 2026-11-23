@@ -83,8 +83,8 @@ Copy `.env.example` to `.env` and export the variables in your shell or load the
 
 ```bash
 export OPENAI_API_KEY="your-embedding-api-key"
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export EMBEDDING_MODEL="text-embedding-3-small"
+export OPENAI_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
+export EMBEDDING_MODEL="text-embedding-v4"
 export RERANK_API_KEY="your-rerank-api-key"
 export RERANK_BASE_URL="https://api.cohere.com/v2"
 export RERANK_MODEL="rerank-v3.5"
@@ -117,6 +117,7 @@ docker compose up --build
 
 - `GET /health` — service health\n- `POST /session` — create an anonymous session and receive its token\n- `POST /model/test` — test a visitor-supplied chat model configuration
 - `POST /documents` — upload and parse a document (multipart field: `file`)
+- `POST /documents/reindex` — regenerate embeddings for all documents in the current anonymous session
 - `GET /documents` — list documents and chunk/vector counts
 - `GET /documents/{id}/text` — inspect extracted text
 - `POST /search` — retrieve relevant chunks
@@ -185,7 +186,7 @@ Run the API and upload the sample handbook. **Compatibility note:** the legacy `
 
 - This is a local-development demo. Do not upload confidential company documents.
 - SQLite and local disk are used for simplicity; PostgreSQL/pgvector and object storage are future improvements.
-- Existing chunks are not automatically re-embedded when the embedding model changes.
+- Existing chunks must be re-embedded through `POST /documents/reindex` after configuring or changing the embedding model. The endpoint processes documents in the current anonymous session only; keep the same browser session while reindexing.
 - Keyword matching is a lightweight token-presence baseline, not BM25 or production-grade Chinese full-text search.
 - RRF cannot compensate for missing retrieval candidates; the evaluation dataset is small and not a production benchmark.
 - The RAG prompt asks the model to cite retrieved source IDs, but LLM output is not yet independently verified against each claim. Treat citations as model-generated references, not a formal guarantee.
