@@ -36,6 +36,7 @@ export default function App() {
   const [modelStatus, setModelStatus] = useState("");
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
   const [searching, setSearching] = useState(false);
   const [rerankEnabled, setRerankEnabled] = useState(false);
   const [query, setQuery] = useState("");
@@ -66,6 +67,23 @@ export default function App() {
     }).catch(() => setHealth("error"));
     return () => chatAbortRef.current?.abort();
   }, []);
+
+  const handleReindex = async () => {
+    setReindexing(true); setMessage(""); setError("");
+    try {
+      const response = await apiFetch("/documents/reindex", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "重新生成向量失败");
+      await loadDocuments();
+      const summary = "向量索引完成：" + result.indexed_documents + "/" + result.total_documents + " 份文档成功";
+      const failures = (result.failed || []).map((item: { filename: string; error: string }) => item.filename + "：" + item.error).join("；");
+      setMessage(failures ? summary + "；失败：" + failures : summary);
+    } catch (reindexError) {
+      setError(reindexError instanceof Error ? reindexError.message : "重新生成向量失败，请重试。");
+    } finally {
+      setReindexing(false);
+    }
+  };
 
   const handleUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -280,7 +298,7 @@ export default function App() {
       </section>
 
       <section id="documents-section" className="documents-section">
-        <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><span className="count">{documents.length} 个文件</span></div>
+        <div className="section-heading"><div><h3>知识库文档</h3><p>已上传并完成文本提取的资料</p></div><div><span className="count">{documents.length} 个文件</span> <button type="button" onClick={handleReindex} disabled={reindexing || documents.length === 0}>{reindexing ? "正在生成向量…" : "重新生成向量"}</button></div></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
           <div className="document-list">{documents.map((document) => <article className="document-row" key={document.id}>
             <div className="file-icon"><FileText size={19} /></div>

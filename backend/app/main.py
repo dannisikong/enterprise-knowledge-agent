@@ -16,6 +16,7 @@ from app.services.document_service import (
     list_documents,
     search_chunks,
     upload_document,
+    reindex_documents,
     cleanup_session_documents,
 )
 from app.services.llm_service import (
@@ -129,6 +130,14 @@ async def create_document(file: UploadFile = File(...), session: dict = Depends(
 @app.get("/documents", tags=["documents"])
 async def documents(session: dict = Depends(require_session)) -> list[dict]:
     return list_documents(session["id"])
+
+
+@app.post("/documents/reindex", tags=["documents"])
+async def reindex_session_documents(session: dict = Depends(require_session)) -> dict:
+    try:
+        return await reindex_documents(session["id"])
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
 
 
 @app.get("/documents/{document_id}/text", tags=["documents"])
