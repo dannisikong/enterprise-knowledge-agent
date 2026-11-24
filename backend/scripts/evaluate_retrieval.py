@@ -42,6 +42,36 @@ def create_evaluation_session(base_url: str) -> str:
     return token
 
 
+def upload_evaluation_document(base_url: str, token: str) -> dict:
+    sample_path = BACKEND_DIR.parent / "samples" / "employee-handbook.md"
+    if not sample_path.is_file():
+        raise SystemExit(f"Evaluation sample document not found: {sample_path}")
+    boundary = "----EnterpriseKnowledgeAgentEvaluationBoundary"
+    file_bytes = sample_path.read_bytes()
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="employee-handbook.md"\r\n'
+        "Content-Type: text/markdown; charset=utf-8\r\n\r\n"
+    ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    request = Request(
+        f"{base_url.rstrip('/')}/documents",
+        data=body,
+        headers={
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "X-Session-Token": token,
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=120) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        message = error.read().decode("utf-8", errors="replace")
+        raise SystemExit(f"Unable to upload evaluation sample (HTTP {error.code}): {message}") from error
+    except (URLError, TimeoutError) as error:
+        raise SystemExit(f"Unable to upload evaluation sample: {error}") from error
+
+
 def post_search(base_url: str, token: str, query: str, mode: str, limit: int, rerank: bool = False) -> dict:
     return post_json(
         f"{base_url.rstrip('/')}/search",
@@ -132,12 +162,18 @@ def main() -> int:
             raise SystemExit(f"Dataset row {index} is missing fields: {', '.join(sorted(missing))}")
 
     token = create_evaluation_session(args.base_url)
+    uploaded_document = upload_evaluation_document(args.base_url, token)
     report = {
         "dataset": DATASET_PATH.name,
         "dataset_size": len(dataset),
         "k": args.k,
         "cutoffs": [1, 3, 5],
         "session_note": "A dedicated evaluation session was created; it expires according to the API session TTL.",
+        "sample_document": {
+            "filename": uploaded_document.get("filename"),
+            "chunk_count": uploaded_document.get("chunk_count"),
+            "embedding_status": uploaded_document.get("embedding_status"),
+        },
         "modes": {},
     }
 
