@@ -5,9 +5,8 @@
 ## 准备
 
 1. 在项目根目录启动后端：`cd backend && uvicorn app.main:app --reload`。
-2. 上传仓库中的 `samples/employee-handbook.md`。
-3. 如果要评估 vector/hybrid，请配置 Embedding API 后重新上传样例文档，并确认 embedded chunk count 大于 0。
-4. 确保 API 地址可从运行脚本的环境访问。
+2. 如果要评估 vector/hybrid，请先在后端配置 Embedding API；脚本会在专用评估 Session 中自动上传 `samples/employee-handbook.md` 并生成向量（若已配置）。
+3. 确保 API 地址可从运行脚本的环境访问。
 
 ## 运行
 
@@ -26,7 +25,7 @@ python scripts/evaluate_retrieval.py --modes keyword hybrid
 python scripts/evaluate_retrieval.py --compare-reranker --output evaluation/report.json
 ```
 
-脚本会先调用 `POST /session` 创建专用评估 Session，再使用返回的 `X-Session-Token` 调用受保护的 `POST /search`。不会读取其他 Session 的文档。Session 按服务端现有 TTL 过期清理；当前没有单独删除 Session 的公开接口。
+脚本会先调用 `POST /session` 创建专用评估 Session，再用该 Session Token 上传仓库样例手册，并调用受保护的 `POST /search`。整个评估数据都在该 Session 内，不会读取其他 Session 的文档。上传样例可能调用 Embedding API 并产生少量费用。Session 按服务端现有 TTL 过期清理；当前没有单独删除 Session 的公开接口。
 
 默认评估 keyword、vector、hybrid 三种模式。若 vector 或 hybrid 不可用，报告会明确标记为 unavailable，不会把关键词回退结果误记为向量/混合检索结果。
 
