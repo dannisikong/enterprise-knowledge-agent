@@ -31,7 +31,7 @@ export default function App() {
   const [health, setHealth] = useState<"checking" | "ok" | "error">("checking");
   const [activeSection, setActiveSection] = useState<"chat" | "documents">("chat");
   const [showModelSettings, setShowModelSettings] = useState(false);
-  const [modelSettings, setModelSettings] = useState<ModelSettingsValue>({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" });
+  const [modelSettings, setModelSettings] = useState<ModelSettingsValue>({ api_key: "", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-max" });
   const [modelTesting, setModelTesting] = useState(false);
   const [modelStatus, setModelStatus] = useState("");
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
