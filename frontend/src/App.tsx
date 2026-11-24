@@ -251,7 +251,7 @@ export default function App() {
     </aside>
     <section className="main-panel">
       <header className="topbar"><div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>企业知识助手</h1></div><div className="topbar-actions"><button className="settings-trigger" onClick={() => setShowModelSettings(current => !current)}><Settings size={15} /> 模型设置</button><div className="secure"><ShieldCheck size={16} /> 独立临时知识库</div></div></header>
-      {showModelSettings && <ModelSettings value={modelSettings} onSave={(value) => { setModelSettings(value); setModelStatus("配置已保存在当前页面内存中。刷新后需要重新输入 API Key。"); }} onClear={() => { setModelSettings({ api_key: "", base_url: "https://api.openai.com/v1", model: "gpt-4o-mini" }); setModelStatus("模型配置已清除。"); }} onTest={handleTestModel} testing={modelTesting} status={modelStatus} />}
+      {showModelSettings && <ModelSettings value={modelSettings} onSave={(value) => { setModelSettings(value); setModelStatus("配置已保存在当前页面内存中。刷新后需要重新输入 API Key。"); }} onClear={() => { setModelSettings({ api_key: "", base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-max" }); setModelStatus("模型配置已清除。"); }} onTest={handleTestModel} testing={modelTesting} status={modelStatus} />}
       <section className="welcome">
         <div className="welcome-icon"><Sparkles size={22} /></div>
         <p className="eyebrow">YOUR KNOWLEDGE, CONNECTED</p>
