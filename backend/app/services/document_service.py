@@ -5,6 +5,7 @@ import math
 import os
 import re
 import sqlite3
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -22,6 +23,12 @@ DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).resolve().parents[2] / 
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "knowledge.db"
 MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_PDF_PAGES = 500
+MAX_DOCX_ENTRIES = 2_000
+MAX_DOCX_UNCOMPRESSED_SIZE = 50 * 1024 * 1024
+MAX_DOCX_COMPRESSION_RATIO = 200
+MAX_EXTRACTED_TEXT_CHARS = 2_000_000
+MAX_CHUNKS_PER_DOCUMENT = 5_000
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
 
 
@@ -66,11 +73,38 @@ def initialize_storage() -> None:
         )
 
 
+def _validate_docx_archive(path: Path) -> None:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            if len(entries) > MAX_DOCX_ENTRIES:
+                raise ValueError("DOCX contains too many archive entries.")
+            if any(info.flag_bits & 0x1 for info in entries):
+                raise ValueError("Encrypted DOCX archives are not supported.")
+            total_uncompressed = sum(info.file_size for info in entries)
+            if total_uncompressed > MAX_DOCX_UNCOMPRESSED_SIZE:
+                raise ValueError("DOCX expands beyond the allowed processing size.")
+            for info in entries:
+                if info.file_size > 0:
+                    ratio = info.file_size / max(info.compress_size, 1)
+                    if ratio > MAX_DOCX_COMPRESSION_RATIO:
+                        raise ValueError("DOCX compression ratio exceeds the safety limit.")
+            if "word/document.xml" not in archive.namelist():
+                raise ValueError("Invalid DOCX document structure.")
+    except zipfile.BadZipFile as error:
+        raise ValueError("Invalid DOCX archive.") from error
+
+
 def _extract_text(path: Path, extension: str) -> str:
     if extension == ".pdf":
         reader = PdfReader(str(path))
+        if reader.is_encrypted:
+            raise ValueError("Encrypted PDF files are not supported.")
+        if len(reader.pages) > MAX_PDF_PAGES:
+            raise ValueError(f"PDF exceeds the {MAX_PDF_PAGES}-page processing limit.")
         return "\n".join(page.extract_text() or "" for page in reader.pages)
     if extension == ".docx":
+        _validate_docx_archive(path)
         document = DocxDocument(str(path))
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
         for table in document.tables:
@@ -81,17 +115,21 @@ def _extract_text(path: Path, extension: str) -> str:
 
 
 def _clean_text(value: str) -> str:
-    value = value.replace("\x00", "")
-    value = re.sub(r"[ \t]+", " ", value)
-    value = re.sub(r"\n{3,}", "\n\n", value)
+    value = value.replace(chr(0), "")
+    value = value.replace(chr(9), " ")
+    value = re.sub(" {2,}", " ", value)
+    while chr(10) * 3 in value:
+        value = value.replace(chr(10) * 3, chr(10) * 2)
     return value.strip()
 
 
 async def upload_document(file: UploadFile, session_id: str) -> dict:
-    original_name = Path(file.filename or "document").name
+    raw_name = (file.filename or "document").replace(chr(92), "/").split("/")[-1]
+    original_name = "".join(char for char in raw_name if ord(char) >= 32 and ord(char) != 127)[:255] or "document"
     extension = Path(original_name).suffix.lower()
     if extension not in ALLOWED_EXTENSIONS:
         raise ValueError("Unsupported file type. Upload PDF, DOCX, TXT or Markdown.")
+
     content = await file.read(MAX_FILE_SIZE + 1)
     if not content:
         raise ValueError("The uploaded file is empty.")
@@ -101,13 +139,20 @@ async def upload_document(file: UploadFile, session_id: str) -> dict:
     document_id = str(uuid4())
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     stored_path = UPLOAD_DIR / f"{document_id}{extension}"
-    stored_path.write_bytes(content)
     try:
+        stored_path.write_bytes(content)
         extracted_text = _clean_text(_extract_text(stored_path, extension))
         if not extracted_text:
             raise ValueError("No readable text found in this document.")
+        if len(extracted_text) > MAX_EXTRACTED_TEXT_CHARS:
+            raise ValueError("Extracted text exceeds the document processing limit.")
 
         chunks = split_text(extracted_text)
+        if not chunks:
+            raise ValueError("No readable text found in this document.")
+        if len(chunks) > MAX_CHUNKS_PER_DOCUMENT:
+            raise ValueError("Document produces too many text chunks.")
+
         vectors: list[list[float]] | None = None
         if embeddings_configured():
             try:
