@@ -119,8 +119,8 @@ def main() -> int:
     parser.add_argument("--output", help="Optional path for a JSON report")
     args = parser.parse_args()
 
-    if args.k < 5:
-        parser.error("--k must be at least 5 so Recall@5 can be measured.")
+    if not 5 <= args.k <= 20:
+        parser.error("--k must be between 5 and 20 (the API limit) so Recall@5 can be measured.")
 
     dataset = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
     if not isinstance(dataset, list) or not dataset:
