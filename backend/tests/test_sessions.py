@@ -19,6 +19,20 @@ def test_session_token_is_hashed_and_validated(tmp_path, monkeypatch):
     assert stored != created["token"]
 
 
+def test_session_expiry_slides_forward_only_for_authenticated_access(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    created = create_session()
+    with _connect() as connection:
+        original_expiry = connection.execute(
+            "SELECT expires_at FROM sessions WHERE id = ?", (created["session_id"],)
+        ).fetchone()["expires_at"]
+
+    session = get_session(created["token"], touch=False)
+    assert session["expires_at"] == original_expiry
+    refreshed = get_session(created["token"], touch=True)
+    assert datetime.fromisoformat(refreshed["expires_at"]) > datetime.fromisoformat(original_expiry)
+
+
 def test_expired_session_is_rejected_and_cleaned(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     created = create_session()
