@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
+import ipaddress
 import json
 import logging
 import os
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -28,7 +29,8 @@ from app.services.llm_service import (
 )
 from app.schemas.session import SessionResponse
 from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions, delete_sessions
-from app.services.rate_limit_service import rate_limiter
+from app.services.rate_limit_service import rate_limiter, session_creation_limiter
+from app.services.security_audit_service import audit_security_event
 
 
 logger = logging.getLogger(__name__)
@@ -77,21 +79,52 @@ def cleanup_expired_data() -> None:
     delete_sessions(expired)
 
 
-async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
+def _session_creation_client_key(request: Request) -> str:
+    # Use the ASGI peer address. Do not trust X-Forwarded-For unless a trusted
+    # proxy chain is explicitly configured at the deployment boundary.
+    if request.client is None:
+        return "unknown"
+    try:
+        return ipaddress.ip_address(request.client.host).compressed
+    except ValueError:
+        return "unknown"
+
+
+async def require_session(
+    request: Request,
+    x_session_token: str | None = Header(default=None),
+) -> dict:
     cleanup_expired_data()
     session = get_session(x_session_token)
     if session is None:
+        audit_security_event(
+            "authentication_failed",
+            client_ip=_session_creation_client_key(request),
+            reason="missing_or_invalid_session",
+        )
         raise HTTPException(status_code=401, detail="A valid demo session is required.")
     if not rate_limiter.allow(session["id"]):
+        audit_security_event(
+            "request_rate_limited",
+            session_id=session["id"],
+            client_ip=_session_creation_client_key(request),
+        )
         raise HTTPException(status_code=429, detail="Too many requests. Please slow down.")
     return session
 
 
 @app.post("/session", response_model=SessionResponse, tags=["session"])
-async def new_session() -> dict[str, str]:
-    return create_session()
-
-
+async def new_session(request: Request) -> dict[str, str]:
+    client_key = _session_creation_client_key(request)
+    if not session_creation_limiter.allow(client_key):
+        audit_security_event(
+            "session_creation_rate_limited",
+            client_ip=client_key,
+        )
+        raise HTTPException(status_code=429, detail="Too many sessions created. Please try again later.")
+    created = create_session()
+    audit_security_event("session_created", session_id=created["session_id"], client_ip=client_key)
+    return created
 
 
 @app.post("/model/test", response_model=ModelTestResponse, tags=["model"])
@@ -120,8 +153,18 @@ async def create_document(file: UploadFile = File(...), session: dict = Depends(
     try:
         return await upload_document(file, session["id"])
     except ValueError as error:
+        audit_security_event(
+            "document_upload_rejected",
+            session_id=session["id"],
+            reason=type(error).__name__,
+        )
         raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
+        audit_security_event(
+            "document_upload_failed",
+            session_id=session["id"],
+            reason=type(error).__name__,
+        )
         raise HTTPException(status_code=422, detail="Unable to parse this document.") from error
     finally:
         await file.close()
@@ -144,6 +187,12 @@ async def reindex_session_documents(session: dict = Depends(require_session)) ->
 async def document_text(document_id: str, session: dict = Depends(require_session)) -> dict:
     document = get_document_text(document_id, session["id"])
     if document is None:
+        audit_security_event(
+            "document_access_denied",
+            session_id=session["id"],
+            resource_id=document_id,
+            reason="not_found_or_not_owned",
+        )
         raise HTTPException(status_code=404, detail="Document not found.")
     return document
 
