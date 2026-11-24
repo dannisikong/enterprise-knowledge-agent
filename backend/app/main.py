@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
+import ipaddress
 import json
 import logging
 import os
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -28,7 +29,7 @@ from app.services.llm_service import (
 )
 from app.schemas.session import SessionResponse
 from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions, delete_sessions
-from app.services.rate_limit_service import rate_limiter
+from app.services.rate_limit_service import rate_limiter, session_creation_limiter
 
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,17 @@ def cleanup_expired_data() -> None:
     delete_sessions(expired)
 
 
+def _session_creation_client_key(request: Request) -> str:
+    # Use the ASGI peer address. Do not trust X-Forwarded-For unless a trusted
+    # proxy chain is explicitly configured at the deployment boundary.
+    if request.client is None:
+        return "unknown"
+    try:
+        return ipaddress.ip_address(request.client.host).compressed
+    except ValueError:
+        return "unknown"
+
+
 async def require_session(x_session_token: str | None = Header(default=None)) -> dict:
     cleanup_expired_data()
     session = get_session(x_session_token)
@@ -88,10 +100,11 @@ async def require_session(x_session_token: str | None = Header(default=None)) ->
 
 
 @app.post("/session", response_model=SessionResponse, tags=["session"])
-async def new_session() -> dict[str, str]:
+async def new_session(request: Request) -> dict[str, str]:
+    client_key = _session_creation_client_key(request)
+    if not session_creation_limiter.allow(client_key):
+        raise HTTPException(status_code=429, detail="Too many sessions created. Please try again later.")
     return create_session()
-
-
 
 
 @app.post("/model/test", response_model=ModelTestResponse, tags=["model"])
