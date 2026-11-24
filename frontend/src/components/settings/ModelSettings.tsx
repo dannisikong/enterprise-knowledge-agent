@@ -28,10 +28,10 @@ export default function ModelSettings({ value, onSave, onClear, onTest, testing,
     </label>
     <button type="button" className="text-action" onClick={() => setShowKey(current => !current)}>{showKey ? "隐藏 Key" : "显示 Key"}</button>
     <label>Base URL
-      <input value={draft.base_url} onChange={event => update("base_url", event.target.value)} placeholder="https://api.openai.com/v1" />
+      <input value={draft.base_url} onChange={event => update("base_url", event.target.value)} placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1" />
     </label>
     <label>模型名称
-      <input value={draft.model} onChange={event => update("model", event.target.value)} placeholder="gpt-4o-mini" />
+      <input value={draft.model} onChange={event => update("model", event.target.value)} placeholder="qwen-max" />
     </label>
     <p className="model-settings-note">Key 仅随请求发送至后端，不写入数据库或浏览器持久存储。刷新页面后需要重新输入。仅支持 HTTPS 公网地址。</p>
     <div className="model-settings-actions">
