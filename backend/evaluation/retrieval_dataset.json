@@ -2,36 +2,211 @@
   {
     "id": "leave-days",
     "query": "员工每年能休多少天带薪年假？",
-    "gold_phrase": "每年 10 天带薪年假"
+    "gold_phrase": "每年 10 天带薪年假",
+    "category": "policy_exact"
+  },
+  {
+    "id": "leave-days-plain",
+    "query": "正式员工一年有几天年假？",
+    "gold_phrase": "每年 10 天带薪年假",
+    "category": "paraphrase"
+  },
+  {
+    "id": "leave-days-casual",
+    "query": "转正之后一年能休几天带薪假？",
+    "gold_phrase": "每年 10 天带薪年假",
+    "category": "colloquial"
+  },
+  {
+    "id": "leave-days-entitlement",
+    "query": "公司给正式员工的年度带薪休假额度是多少？",
+    "gold_phrase": "每年 10 天带薪年假",
+    "category": "paraphrase"
+  },
+  {
+    "id": "leave-days-annual",
+    "query": "年假天数按年度怎么算？",
+    "gold_phrase": "每年 10 天带薪年假",
+    "category": "paraphrase"
   },
   {
     "id": "leave-application",
     "query": "休年假要提前多久向主管申请？",
-    "gold_phrase": "至少提前 3 个工作日"
+    "gold_phrase": "至少提前 3 个工作日",
+    "category": "policy_exact"
+  },
+  {
+    "id": "leave-application-casual",
+    "query": "请年假需要提前几天跟领导说？",
+    "gold_phrase": "至少提前 3 个工作日",
+    "category": "colloquial"
+  },
+  {
+    "id": "leave-application-system",
+    "query": "年假申请最迟要提前多少个工作日提交？",
+    "gold_phrase": "至少提前 3 个工作日",
+    "category": "paraphrase"
+  },
+  {
+    "id": "leave-application-notice",
+    "query": "想休年假，应该提前多久报备？",
+    "gold_phrase": "至少提前 3 个工作日",
+    "category": "paraphrase"
+  },
+  {
+    "id": "leave-application-approval",
+    "query": "年假申请要提前几个工作日并经过谁批准？",
+    "gold_phrase": "至少提前 3 个工作日",
+    "category": "paraphrase"
   },
   {
     "id": "travel-deadline",
     "query": "出差回来后最晚多久提交报销材料？",
-    "gold_phrase": "10 个工作日内"
+    "gold_phrase": "10 个工作日内",
+    "category": "policy_exact"
+  },
+  {
+    "id": "travel-deadline-casual",
+    "query": "出差结束后报销有时间限制吗？",
+    "gold_phrase": "10 个工作日内",
+    "category": "colloquial"
+  },
+  {
+    "id": "travel-deadline-submit",
+    "query": "差旅发票和行程单需要在几天内交？",
+    "gold_phrase": "10 个工作日内",
+    "category": "paraphrase"
+  },
+  {
+    "id": "travel-deadline-late",
+    "query": "出差报销最迟什么时候提交？",
+    "gold_phrase": "10 个工作日内",
+    "category": "paraphrase"
+  },
+  {
+    "id": "travel-deadline-materials",
+    "query": "差旅结束后多久必须把费用明细提交到系统？",
+    "gold_phrase": "10 个工作日内",
+    "category": "paraphrase"
   },
   {
     "id": "travel-payment",
     "query": "差旅报销的钱什么时候发放？",
-    "gold_phrase": "下一个月的工资日"
+    "gold_phrase": "下一个月的工资日",
+    "category": "policy_exact"
+  },
+  {
+    "id": "travel-payment-casual",
+    "query": "报销审批通过后什么时候能拿到钱？",
+    "gold_phrase": "下一个月的工资日",
+    "category": "colloquial"
+  },
+  {
+    "id": "travel-payment-cycle",
+    "query": "财务通常在哪个时间统一支付差旅费用？",
+    "gold_phrase": "下一个月的工资日",
+    "category": "paraphrase"
+  },
+  {
+    "id": "travel-payment-salary",
+    "query": "差旅报销会跟哪一期工资一起发？",
+    "gold_phrase": "下一个月的工资日",
+    "category": "paraphrase"
+  },
+  {
+    "id": "travel-payment-approved",
+    "query": "部门审批完报销后，款项的支付时间是什么？",
+    "gold_phrase": "下一个月的工资日",
+    "category": "paraphrase"
   },
   {
     "id": "screen-lock",
     "query": "员工暂时离开办公桌时电脑需要怎么处理？",
-    "gold_phrase": "超过 5 分钟应锁定屏幕"
+    "gold_phrase": "超过 5 分钟应锁定屏幕",
+    "category": "policy_exact"
+  },
+  {
+    "id": "screen-lock-casual",
+    "query": "离开座位一会儿，电脑要不要锁？",
+    "gold_phrase": "超过 5 分钟应锁定屏幕",
+    "category": "colloquial"
+  },
+  {
+    "id": "screen-lock-time",
+    "query": "离开工位多长时间必须锁屏？",
+    "gold_phrase": "超过 5 分钟应锁定屏幕",
+    "category": "paraphrase"
+  },
+  {
+    "id": "screen-lock-security",
+    "query": "公司电脑的自动锁屏和手动锁屏有什么要求？",
+    "gold_phrase": "超过 5 分钟应锁定屏幕",
+    "category": "paraphrase"
+  },
+  {
+    "id": "screen-lock-away",
+    "query": "员工离开电脑去开会时应遵守什么锁屏要求？",
+    "gold_phrase": "超过 5 分钟应锁定屏幕",
+    "category": "paraphrase"
   },
   {
     "id": "personal-cloud",
     "query": "可以把客户文件上传到自己的网盘或公共 AI 工具吗？",
-    "gold_phrase": "禁止将客户资料上传"
+    "gold_phrase": "禁止将客户资料上传",
+    "category": "policy_exact"
+  },
+  {
+    "id": "personal-cloud-ai",
+    "query": "能不能把客户资料发给公共 AI 帮忙分析？",
+    "gold_phrase": "禁止将客户资料上传",
+    "category": "colloquial"
+  },
+  {
+    "id": "personal-cloud-drive",
+    "query": "客户文件是否允许存放在个人云盘？",
+    "gold_phrase": "禁止将客户资料上传",
+    "category": "paraphrase"
+  },
+  {
+    "id": "personal-cloud-sharing",
+    "query": "员工可以通过个人网盘分享客户文档吗？",
+    "gold_phrase": "禁止将客户资料上传",
+    "category": "paraphrase"
+  },
+  {
+    "id": "personal-cloud-tools",
+    "query": "未经批准的在线工具能否处理客户数据？",
+    "gold_phrase": "禁止将客户资料上传",
+    "category": "paraphrase"
   },
   {
     "id": "security-incident",
     "query": "发现公司设备丢失后应该在多长时间内上报？",
-    "gold_phrase": "在 1 小时内通知信息安全团队"
+    "gold_phrase": "在 1 小时内通知信息安全团队",
+    "category": "policy_exact"
+  },
+  {
+    "id": "security-incident-casual",
+    "query": "电脑丢了要马上报告吗，多久内报？",
+    "gold_phrase": "在 1 小时内通知信息安全团队",
+    "category": "colloquial"
+  },
+  {
+    "id": "security-incident-device",
+    "query": "公司设备遗失后应通知哪个团队，时限是多少？",
+    "gold_phrase": "在 1 小时内通知信息安全团队",
+    "category": "paraphrase"
+  },
+  {
+    "id": "security-incident-leak",
+    "query": "怀疑公司数据泄露后应该多快联系安全团队？",
+    "gold_phrase": "在 1 小时内通知信息安全团队",
+    "category": "paraphrase"
+  },
+  {
+    "id": "security-incident-report",
+    "query": "设备遗失或疑似数据泄露的上报要求是什么？",
+    "gold_phrase": "在 1 小时内通知信息安全团队",
+    "category": "paraphrase"
   }
 ]
