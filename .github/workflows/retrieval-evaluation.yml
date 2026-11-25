@@ -1,0 +1,65 @@
+name: Retrieval Evaluation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: retrieval-evaluation
+  cancel-in-progress: false
+
+jobs:
+  retrieval-evaluation:
+    name: Evaluate retrieval modes against production API
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      BASE_URL: https://enterprise-knowledge-agent-main.onrender.com
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate evaluation script syntax
+        run: python -m py_compile backend/scripts/evaluate_retrieval.py
+
+      # Each mode gets its own short-lived evaluation session. The API limits
+      # authenticated requests per session, and the full dataset has 35 queries.
+      - name: Evaluate keyword retrieval
+        working-directory: backend
+        run: |
+          python scripts/evaluate_retrieval.py \
+            --base-url "$BASE_URL" \
+            --modes keyword \
+            --output evaluation/reports/keyword.json
+
+      - name: Evaluate vector retrieval
+        working-directory: backend
+        run: |
+          python scripts/evaluate_retrieval.py \
+            --base-url "$BASE_URL" \
+            --modes vector \
+            --output evaluation/reports/vector.json
+
+      - name: Evaluate hybrid retrieval
+        working-directory: backend
+        run: |
+          python scripts/evaluate_retrieval.py \
+            --base-url "$BASE_URL" \
+            --modes hybrid \
+            --output evaluation/reports/hybrid.json
+
+      - name: Upload evaluation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrieval-evaluation-reports
+          path: backend/evaluation/reports/*.json
+          if-no-files-found: warn
+          retention-days: 14
