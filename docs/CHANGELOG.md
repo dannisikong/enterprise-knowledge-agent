@@ -13,7 +13,7 @@ All entries are concise handover snapshots. This is not a raw chat transcript.
 
 ### 2026-11-26 evening refresh
 
-- Re-checked GitHub: `main` is now `a431fb4727818f9fab5c4bb3c1e85e7c466964c7`; 14 commits were added after the initial archive snapshot, including the B2 corpus and multi-evidence evaluator changes.
+- Re-checked GitHub: the latest application-code commit at review time was `a431fb4727818f9fab5c4bb3c1e85e7c466964c7`; 14 commits had been added after the initial archive snapshot, including the B2 corpus and multi-evidence evaluator changes. The archive refresh then advanced `main` with docs-only commits.
 - Verified the repository now contains the six-document, 40-question B2 corpus under `backend/evaluation/b2/`; category counts are 10/8/8/5/4/5. Read-only evidence-anchor/source-reference cross-check found no mismatches.
 - Evaluator and tests now include multi-evidence, evidence completeness, source coverage, and no-answer candidate-presence metrics. The latter is `no_answer_nonempty@K`, not a judged false-positive rate.
 - Latest CI run `45783910071` on HEAD completed successfully: backend tests and frontend typecheck/build both passed. No B2 production evaluation run or deployment confirmation was found.
