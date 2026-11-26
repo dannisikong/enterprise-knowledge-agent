@@ -13,8 +13,9 @@ Build an enterprise knowledge-base assistant (RAG / AI Agent application) as a p
 - GitHub: https://github.com/dannisikong/enterprise-knowledge-agent
 - Backend (Render): https://enterprise-knowledge-agent-main.onrender.com
 - Frontend (Render): https://enterprise-knowledge-agent-web.onrender.com
-- Latest main commit verified 2026-11-26: `a431fb4727818f9fab5c4bb3c1e85e7c466964c7`
-- Latest commit message: Adapt retrieval evaluator for multi-document B2 benchmark.
+- Latest application-code commit verified 2026-11-26, before this docs-only archive refresh: `a431fb4727818f9fab5c4bb3c1e85e7c466964c7`
+- Application-code commit message: Adapt retrieval evaluator for multi-document B2 benchmark.
+- The archive refresh added only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md` commits after that application-code commit. Re-check the live `main` HEAD before continuing work.
 - Render deployment state: do not assume latest main is deployed unless user confirms or deployment is independently checked.
 
 ## 3. Technology and current configuration
@@ -74,7 +75,7 @@ Goal: validate retrieval across multiple documents without changing the embeddin
 
 ### Repository-verified implementation (2026-11-26)
 
-- Latest `main` HEAD: `a431fb4727818f9fab5c4bb3c1e85e7c466964c7` (commit message: “Adapt retrieval evaluator for multi-document B2 benchmark”).
+- Latest application-code commit before the docs-only archive updates: `a431fb4727818f9fab5c4bb3c1e85e7c466964c7` (commit message: “Adapt retrieval evaluator for multi-document B2 benchmark”). The subsequent archive commits changed only the two project-record files.
 - The 6-document corpus and 40-question dataset now exist in `backend/evaluation/b2/`:
   - HR: `employee-handbook.md`, `attendance-policy.md`
   - IT: `account-access-policy.md`, `incident-response-policy.md`
