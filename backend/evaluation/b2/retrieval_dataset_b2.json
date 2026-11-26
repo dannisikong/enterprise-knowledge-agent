@@ -1,0 +1,722 @@
+{
+  "dataset_name": "enterprise_rag_b2_compact",
+  "version": "1.0.0",
+  "language": "en+zh",
+  "dataset_size": 40,
+  "categories": {
+    "single_document": 10,
+    "semantic_paraphrase": 8,
+    "distractor": 8,
+    "multi_document": 5,
+    "no_answer": 4,
+    "complex_scenario": 5
+  },
+  "documents": [
+    "account-access-policy.md",
+    "attendance-policy.md",
+    "data-security-policy.md",
+    "employee-handbook.md",
+    "incident-response-policy.md",
+    "travel-expense-policy.md"
+  ],
+  "questions": [
+    {
+      "id": "SD-001",
+      "category": "single_document",
+      "query": "How long is the probation period for a new employee?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "90-calendar-day probation period"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-002",
+      "category": "single_document",
+      "query": "How many days of paid annual leave are available after probation?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "10 days of paid annual leave per calendar year"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-003",
+      "category": "single_document",
+      "query": "How far in advance should annual leave be requested?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "at least 5 working days before leave begins"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-004",
+      "category": "single_document",
+      "query": "When is a medical certificate required for sickness absence?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "more than 2 consecutive working days"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-005",
+      "category": "single_document",
+      "query": "What are the standard working hours?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "09:00–18:00, Monday through Friday"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-006",
+      "category": "single_document",
+      "query": "What are the core collaboration hours?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "10:00–16:00"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-007",
+      "category": "single_document",
+      "query": "When must overtime be approved?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "before it is worked"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-008",
+      "category": "single_document",
+      "query": "Which systems require MFA?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "company email, source-code hosting, cloud consoles, and VPN access"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-009",
+      "category": "single_document",
+      "query": "How often is privileged access reviewed?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "quarterly"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SD-010",
+      "category": "single_document",
+      "query": "What is the P2 incident acknowledgement target?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "acknowledge a P2 within 1 hour"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-001",
+      "category": "semantic_paraphrase",
+      "query": "I am new to the company. How long will my initial trial employment period last?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "90-calendar-day probation period"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-002",
+      "category": "semantic_paraphrase",
+      "query": "By what point before taking vacation should I file the request?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "at least 5 working days before leave begins"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-003",
+      "category": "semantic_paraphrase",
+      "query": "If I am sick for several days in a row, when do I need a doctor's note?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "more than 2 consecutive working days"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-004",
+      "category": "semantic_paraphrase",
+      "query": "What is the earliest and latest time I can begin work under the flexible schedule?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "between 08:00 and 10:00"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-005",
+      "category": "semantic_paraphrase",
+      "query": "How quickly does the on-call team need to respond to a critical outage?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "acknowledge a P1 within 15 minutes"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-006",
+      "category": "semantic_paraphrase",
+      "query": "How much time do I have after returning from a business trip to file expenses?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "travel-expense-policy.md",
+          "evidence_phrase": "within 15 calendar days after the trip ends"
+        }
+      ],
+      "expected_source_documents": [
+        "travel-expense-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-007",
+      "category": "semantic_paraphrase",
+      "query": "What extra login verification must be enabled for the VPN?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "Multi-factor authentication (MFA) is mandatory"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "SP-008",
+      "category": "semantic_paraphrase",
+      "query": "Can I put a company API token in a source-code file?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "must never be placed in source code"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-001",
+      "category": "distractor",
+      "query": "What is the annual leave allowance, and how many days before leave must I request it?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "10 days of paid annual leave per calendar year"
+        },
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "at least 5 working days before leave begins"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-002",
+      "category": "distractor",
+      "query": "What is the normal workday, and during which hours is everyone expected to collaborate?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "09:00–18:00, Monday through Friday"
+        },
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "10:00–16:00"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-003",
+      "category": "distractor",
+      "query": "How late can I arrive before notifying my manager, and when must I notify them?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "more than 15 minutes late"
+        },
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "before the scheduled start time"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-004",
+      "category": "distractor",
+      "query": "What is the P1 acknowledgement deadline, and how often must stakeholders receive updates?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "acknowledge a P1 within 15 minutes"
+        },
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "at least every 30 minutes"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-005",
+      "category": "distractor",
+      "query": "What is the receipt threshold for travel expenses, and by when must the claim be filed?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "travel-expense-policy.md",
+          "evidence_phrase": "above RMB 200"
+        },
+        {
+          "document": "travel-expense-policy.md",
+          "evidence_phrase": "within 15 calendar days after the trip ends"
+        }
+      ],
+      "expected_source_documents": [
+        "travel-expense-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-006",
+      "category": "distractor",
+      "query": "Which data class requires encryption both while stored and while transmitted?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "data-security-policy.md",
+          "evidence_phrase": "Restricted data must be encrypted in transit and at rest"
+        }
+      ],
+      "expected_source_documents": [
+        "data-security-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-007",
+      "category": "distractor",
+      "query": "When must IT disable a departing employee's accounts, and who has to notify IT?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "manager must notify IT before an employee's final working day"
+        },
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "no later than the employee's departure time"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "DI-008",
+      "category": "distractor",
+      "query": "How long must a P3 be acknowledged, and what is the mitigation target?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "within 4 business hours"
+        },
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "2 business days"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "MD-001",
+      "category": "multi_document",
+      "query": "I need to work remotely tomorrow and may start at 9:30. What approvals and availability rules apply?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "Remote work requires manager approval in advance"
+        },
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "remain reachable during core collaboration hours"
+        },
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "between 08:00 and 10:00"
+        }
+      ],
+      "expected_source_documents": [
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "MD-002",
+      "category": "multi_document",
+      "query": "A new employee needs access to the cloud console and VPN. What must happen before access is granted, and what login control is mandatory?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "manager approval and identity verification"
+        },
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "Multi-factor authentication (MFA) is mandatory"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "MD-003",
+      "category": "multi_document",
+      "query": "A suspected data leak has occurred. What should an employee do, and who can make an external statement?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "report suspected security incidents immediately"
+        },
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "Only the incident lead or designated communications owner may issue external statements"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "MD-004",
+      "category": "multi_document",
+      "query": "An employee is sick for three working days and wants to use paid leave. What notification or documentation is required, and how much annual leave is available after probation?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "notify their manager and HR as soon as practical on the first day of absence"
+        },
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "medical certificate is required for illness-related absence lasting more than 2 consecutive working days"
+        },
+        {
+          "document": "employee-handbook.md",
+          "evidence_phrase": "10 days of paid annual leave per calendar year after completing probation"
+        }
+      ],
+      "expected_source_documents": [
+        "employee-handbook.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "MD-005",
+      "category": "multi_document",
+      "query": "An employee is planning a 7-hour business flight and wants reimbursement. What booking class and approvals apply, and what is the claim deadline?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "travel-expense-policy.md",
+          "evidence_phrase": "Flights of 6 hours or more may be premium economy with department-head approval"
+        },
+        {
+          "document": "travel-expense-policy.md",
+          "evidence_phrase": "within 15 calendar days after the trip ends"
+        }
+      ],
+      "expected_source_documents": [
+        "travel-expense-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "NA-001",
+      "category": "no_answer",
+      "query": "How many paid personal wellness days are granted each year?",
+      "answerable": false,
+      "required_evidence": [],
+      "expected_source_documents": [],
+      "notes": "No wellness-day allowance is specified in the corpus."
+    },
+    {
+      "id": "NA-002",
+      "category": "no_answer",
+      "query": "What is the company's parental leave duration for non-birthing parents?",
+      "answerable": false,
+      "required_evidence": [],
+      "expected_source_documents": [],
+      "notes": "Parental leave duration is not specified in the corpus."
+    },
+    {
+      "id": "NA-003",
+      "category": "no_answer",
+      "query": "What is the maximum hotel nightly rate in Shanghai?",
+      "answerable": false,
+      "required_evidence": [],
+      "expected_source_documents": [],
+      "notes": "The travel policy does not specify a hotel nightly cap."
+    },
+    {
+      "id": "NA-004",
+      "category": "no_answer",
+      "query": "Which cloud provider hosts the company's production environment?",
+      "answerable": false,
+      "required_evidence": [],
+      "expected_source_documents": [],
+      "notes": "The supplied policies do not identify a cloud provider."
+    },
+    {
+      "id": "CX-001",
+      "category": "complex_scenario",
+      "query": "A P1 outage begins at 10:00 and is confirmed to expose customer data. What acknowledgement and update cadence apply, and who may communicate externally?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "acknowledge a P1 within 15 minutes"
+        },
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "at least every 30 minutes"
+        },
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "Only the incident lead or designated communications owner may issue external statements"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "CX-002",
+      "category": "complex_scenario",
+      "query": "An employee's laptop is lost while traveling and it may contain Restricted data. What immediate reporting and data-handling rules apply?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "contact the IT service desk immediately"
+        },
+        {
+          "document": "data-security-policy.md",
+          "evidence_phrase": "Restricted data must be encrypted in transit and at rest"
+        },
+        {
+          "document": "data-security-policy.md",
+          "evidence_phrase": "must not be copied to personal devices or unapproved cloud storage"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md",
+        "data-security-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "CX-003",
+      "category": "complex_scenario",
+      "query": "A team wants to send an unreleased customer dataset to an external analytics vendor. What classification and approvals must be checked?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "data-security-policy.md",
+          "evidence_phrase": "unreleased customer datasets"
+        },
+        {
+          "document": "data-security-policy.md",
+          "evidence_phrase": "unless the Chief Information Security Officer (CISO) gives explicit written authorization"
+        }
+      ],
+      "expected_source_documents": [
+        "data-security-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "CX-004",
+      "category": "complex_scenario",
+      "query": "P3 故障最长多久内响应？",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "incident-response-policy.md",
+          "evidence_phrase": "acknowledge a P3 within 4 business hours"
+        }
+      ],
+      "expected_source_documents": [
+        "incident-response-policy.md"
+      ],
+      "notes": ""
+    },
+    {
+      "id": "CX-005",
+      "category": "complex_scenario",
+      "query": "A manager asks an employee to work overtime remotely and store an API key in a shared document. Which requirements apply?",
+      "answerable": true,
+      "required_evidence": [
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "Overtime must be approved in writing by the manager before it is worked"
+        },
+        {
+          "document": "attendance-policy.md",
+          "evidence_phrase": "Remote work requires manager approval in advance"
+        },
+        {
+          "document": "account-access-policy.md",
+          "evidence_phrase": "must never be placed in source code, tickets visible to unauthorized users, or shared documents"
+        }
+      ],
+      "expected_source_documents": [
+        "account-access-policy.md",
+        "attendance-policy.md"
+      ],
+      "notes": ""
+    }
+  ]
+}
