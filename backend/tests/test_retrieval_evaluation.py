@@ -93,8 +93,8 @@ def test_multi_evidence_metrics_measure_partial_and_complete_recall():
     )
 
     assert metrics["recall@1"] == 1.0
-    assert metrics["evidence_recall@1"] == 1 / 3
-    assert metrics["evidence_recall@3"] == 2 / 3
+    assert metrics["evidence_recall@1"] == 0.3333
+    assert metrics["evidence_recall@3"] == 0.6667
     assert metrics["evidence_complete@3"] == 0.0
     assert metrics["source_coverage@1"] == 0.5
     assert metrics["source_coverage@3"] == 1.0
