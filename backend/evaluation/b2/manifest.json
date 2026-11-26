@@ -1,0 +1,29 @@
+{
+  "name": "Enterprise RAG B2 Compact Evaluation Corpus",
+  "version": "1.0.0",
+  "document_count": 6,
+  "question_count": 40,
+  "category_counts": {
+    "single_document": 10,
+    "semantic_paraphrase": 8,
+    "distractor": 8,
+    "multi_document": 5,
+    "no_answer": 4,
+    "complex_scenario": 5
+  },
+  "embedding_model_assumption": "Keep the existing text-embedding-v1 model unchanged for this experiment.",
+  "evaluation_metrics": [
+    "Recall@1/3/5",
+    "MRR",
+    "Evidence Recall@K",
+    "Multi-document required-evidence completeness and source coverage",
+    "No-answer retrieval false-positive rate",
+    "Per-category breakdown"
+  ],
+  "limitations": [
+    "Synthetic benchmark, not a real company's policy corpus.",
+    "Evidence phrases are lightweight textual anchors and may need evaluator-specific normalization.",
+    "No-answer retrieval false positives and answer abstention should be evaluated separately.",
+    "Retrieval rank is not answer correctness or citation faithfulness."
+  ]
+}
