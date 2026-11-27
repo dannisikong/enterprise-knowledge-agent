@@ -31,6 +31,10 @@ from app.schemas.session import SessionResponse
 from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions, delete_sessions
 from app.services.rate_limit_service import rate_limiter, session_creation_limiter
 from app.services.security_audit_service import audit_security_event
+from app.services.conversation_service import (
+    initialize_conversations, create_conversation, get_conversation, list_conversations,
+    save_message, list_messages, recent_history, delete_conversation, cleanup_session_conversations,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -40,6 +44,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(_: FastAPI):
     initialize_storage()
     initialize_sessions()
+    initialize_conversations()
     cleanup_expired_data()
     yield
 
@@ -66,6 +71,10 @@ class SearchRequest(BaseModel):
     rerank: bool = False
 
 
+class ConversationCreateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+
+
 class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=2000)
     limit: int = Field(default=5, ge=1, le=10)
@@ -75,6 +84,7 @@ class ChatRequest(BaseModel):
 
 def cleanup_expired_data() -> None:
     expired = cleanup_expired_sessions()
+    cleanup_session_conversations(expired)
     cleanup_session_documents(expired)
     delete_sessions(expired)
 
@@ -205,15 +215,120 @@ async def search(request: SearchRequest, session: dict = Depends(require_session
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-async def _retrieve_for_chat(request: ChatRequest, session_id: str) -> tuple[list[dict], list[dict]]:
+async def _retrieve_for_chat(request: ChatRequest, session_id: str, history: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
     if not llm_configured(request.model_settings):
         raise HTTPException(status_code=503, detail="Please configure a valid chat model in Model Settings.")
     try:
         retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    messages, sources = build_grounded_messages(request.query, retrieval["results"])
+    messages, sources = build_grounded_messages(request.query, retrieval["results"], history=history)
     return messages, sources
+
+
+
+
+@app.post("/conversations", tags=["conversations"], status_code=201)
+async def new_conversation(
+    request: ConversationCreateRequest,
+    session: dict = Depends(require_session),
+) -> dict:
+    return create_conversation(session["id"], request.title)
+
+
+@app.get("/conversations", tags=["conversations"])
+async def conversations(session: dict = Depends(require_session)) -> list[dict]:
+    return list_conversations(session["id"])
+
+
+@app.get("/conversations/{conversation_id}/messages", tags=["conversations"])
+async def conversation_messages(
+    conversation_id: str,
+    session: dict = Depends(require_session),
+) -> dict:
+    conversation = get_conversation(conversation_id, session["id"])
+    if conversation is None:
+        audit_security_event(
+            "conversation_access_denied",
+            session_id=session["id"],
+            resource_id=conversation_id,
+            reason="not_found_or_not_owned",
+        )
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"conversation": conversation, "messages": list_messages(conversation_id)}
+
+
+@app.delete("/conversations/{conversation_id}", tags=["conversations"])
+async def remove_conversation(
+    conversation_id: str,
+    session: dict = Depends(require_session),
+) -> dict:
+    if not delete_conversation(conversation_id, session["id"]):
+        audit_security_event(
+            "conversation_access_denied",
+            session_id=session["id"],
+            resource_id=conversation_id,
+            reason="delete_not_found_or_not_owned",
+        )
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    return {"deleted": True}
+
+
+@app.post("/conversations/{conversation_id}/messages/stream", tags=["conversations"])
+async def conversation_chat_stream(
+    conversation_id: str,
+    request: ChatRequest,
+    session: dict = Depends(require_session),
+):
+    conversation = get_conversation(conversation_id, session["id"])
+    if conversation is None:
+        audit_security_event(
+            "conversation_access_denied",
+            session_id=session["id"],
+            resource_id=conversation_id,
+            reason="message_not_found_or_not_owned",
+        )
+        raise HTTPException(status_code=404, detail="Conversation not found.")
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query must not be empty.")
+
+    history = recent_history(conversation_id, limit=8)
+    messages, sources = await _retrieve_for_chat(request, session["id"], history=history)
+    user_message = save_message(conversation_id, "user", request.query.strip())
+
+    async def event_stream():
+        def event(name: str, payload: dict) -> str:
+            return f"event: {name}\\ndata: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
+
+        yield event("sources", {
+            "sources": sources,
+            "retrieval": {"mode": "hybrid", "result_count": len(sources)},
+            "user_message_id": user_message["id"],
+        })
+        if not sources:
+            answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
+            assistant_message = save_message(conversation_id, "assistant", answer, [])
+            yield event("token", {"content": answer})
+            yield event("done", {"assistant_message_id": assistant_message["id"]})
+            return
+
+        answer_parts: list[str] = []
+        try:
+            async for token in stream_answer(messages, request.model_settings):
+                answer_parts.append(token)
+                yield event("token", {"content": token})
+            answer = "".join(answer_parts)
+            assistant_message = save_message(conversation_id, "assistant", answer, sources)
+            yield event("done", {"assistant_message_id": assistant_message["id"]})
+        except Exception:
+            logger.exception("Conversation streaming response failed")
+            yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。"})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/chat", tags=["chat"])
