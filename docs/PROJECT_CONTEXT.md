@@ -1,6 +1,6 @@
 # Enterprise Knowledge Agent — Project Context
 
-> Last verified: 2026-11-26 (Asia/Taipei), 19:21  
+> Last verified: 2026-11-27 (Asia/Taipei), 19:35  
 > Purpose: durable handover document for continuing work across ChatGPT conversations.  
 > Rule: distinguish verified repository facts, user-reported deployment state, and pending verification. Never infer a deployment from a merge or CI pass.
 
@@ -13,9 +13,9 @@ Build an enterprise knowledge-base assistant (RAG / AI Agent application) as a p
 - GitHub: https://github.com/dannisikong/enterprise-knowledge-agent
 - Backend (Render): https://enterprise-knowledge-agent-main.onrender.com
 - Frontend (Render): https://enterprise-knowledge-agent-web.onrender.com
-- Latest application-code commit verified 2026-11-26, before this docs-only archive refresh: `a431fb4727818f9fab5c4bb3c1e85e7c466964c7`
-- Application-code commit message: Adapt retrieval evaluator for multi-document B2 benchmark.
-- The archive refresh added only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md` commits after that application-code commit. Re-check the live `main` HEAD before continuing work.
+- Latest `main` HEAD verified 2026-11-27 (Asia/Taipei, 19:15): `b11c73a701b62c3c2dee378f16efe7487821c9ef` (docs-only archive commit).
+- Latest application-code commit remains `a431fb4727818f9fab5c4bb3c1e85e7c466964c7` (Adapt retrieval evaluator for multi-document B2 benchmark). GitHub compare confirms that all commits from `a431fb` through current `main` modify only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md`; no application-code changes have landed since `a431fb`.
+- Current `main` CI run `45989001273` for `b11c73a` completed successfully on 2026-11-27; both Backend tests and Frontend typecheck/build jobs passed.
 - Render deployment state: do not assume latest main is deployed unless user confirms or deployment is independently checked.
 
 ## 3. Technology and current configuration
@@ -96,8 +96,8 @@ Goal: validate retrieval across multiple documents without changing the embeddin
 - For no-answer questions, the current metric is named `no_answer_nonempty@K`: it measures whether retrieval returned any candidates. It is **not** a judged false-positive rate and does not measure whether the answer generator abstains. This distinction must remain explicit in reports.
 - `backend/scripts/evaluate_retrieval.py` now defaults to the B2 dataset, validates required fields, creates a dedicated session, uploads the six documents, and evaluates selected retrieval modes. Each script invocation creates its own session.
 - Tests were added for multi-evidence, source coverage, no-answer candidate presence, and mixed aggregation.
-- Latest CI run for HEAD `a431fb4`: run `45783910071`, completed successfully on 2026-11-26. Both “Backend tests” and “Frontend typecheck and build” jobs succeeded. An earlier intermediate CI run failed on evidence-recall rounding expectations; a follow-up correction commit passed, and the latest HEAD is green.
-- No B2 production retrieval evaluation run is visible yet. The most recent `Retrieval Evaluation` workflow dispatch in the inspected Actions list is from 2026-11-25 on the pre-B2 commit `8807b5105cce05d85eef0e7944c422c7f99d5b98`.
+- Application-code CI for `a431fb`: run `45783910071`, completed successfully on 2026-11-26. Both “Backend tests” and “Frontend typecheck and build” jobs succeeded. The latest `main` docs-only HEAD `b11c73a` also has a successful CI run `45989001273` (2026-11-27), with both jobs passing. An earlier intermediate CI run failed on evidence-recall rounding expectations; a follow-up correction commit passed.
+- Two `Retrieval Evaluation` workflow-dispatch runs were verified on 2026-11-27 against workflow code at `81fc646cb0b73d36618bb52b1454969301e30e58`: run `45986181481` and run `45927059311`; both completed successfully. In both runs, the production-API evaluation job, Keyword, Vector, Hybrid, and artifact-upload steps all succeeded. Each produced a `retrieval-evaluation-reports` artifact (10,791 bytes; retained until 2026-12-11). Artifact contents were not independently downloaded during this archive check; use the user-provided JSON reports recorded below for metric values. These successful workflow runs do not independently prove which application commit is currently deployed on Render.
 - The current manual retrieval workflow still targets the Render production API and invokes each mode separately. Its comment still says the dataset has 35 questions, and `docs/retrieval-evaluation.md` still describes the old 35-question single-handbook experiment; both are stale relative to the B2 default.
 - Latest main changes are repository-verified only. No user-confirmed Render deployment of HEAD `a431fb4` is recorded; do not assume it is live.
 
@@ -275,3 +275,14 @@ The user confirmed moving on after the B2 evaluation summary. Proposed next phas
 
 No application code, workflow, Render setting, or deployment was changed as part of this documentation update.
 
+
+
+## 13. Latest GitHub verification — 2026-11-27 evening
+
+- Repository default branch is `main`; latest HEAD at the time of this check is `b11c73a701b62c3c2dee378f16efe7487821c9ef`.
+- Comparing application commit `a431fb4727818f9fab5c4bb3c1e85e7c466964c7` with current main shows only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md` changed. The application-code tree is unchanged since `a431fb`.
+- CI for current main HEAD: run [45989001273](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45989001273), completed successfully; Backend tests and Frontend typecheck/build both passed.
+- Production-API retrieval evaluation: runs [45986181481](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45986181481) and [45927059311](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45927059311), both completed successfully on workflow code at `81fc646`. The Keyword, Vector, Hybrid, and artifact-upload steps succeeded in both. Each run produced a `retrieval-evaluation-reports` artifact of 10,791 bytes, expiring 2026-12-11. Artifact contents were not downloaded/inspected during this check; aggregate metrics remain sourced from the user-provided JSON reports documented in Section 11.
+- PR inventory check: PRs #1–#6 are closed; no open PR appeared in the returned list.
+- Deployment status remains unverified. A successful workflow calling the production API is not proof that Render is running a particular commit.
+- This archive check changed no application code, workflow, configuration, secret, branch protection, or Render setting.
