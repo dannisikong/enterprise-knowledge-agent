@@ -72,7 +72,7 @@ def _settings(config=None) -> tuple[str, str, str]:
     return values
 
 
-def build_grounded_messages(question: str, results: list[dict]) -> tuple[list[dict], list[dict]]:
+def build_grounded_messages(question: str, results: list[dict], history: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
     sources = [
         {
             "id": index,
@@ -100,7 +100,25 @@ def build_grounded_messages(question: str, results: list[dict]) -> tuple[list[di
         f"问题：{question}\n\n检索资料：\n{context}\n\n"
         "请根据资料回答，并在相关句子后标注来源编号。若资料不支持答案，请明确说明。"
     )
-    return [{"role": "system", "content": system}, {"role": "user", "content": user}], sources
+    # History helps resolve references only; enterprise facts must come from current retrieval.
+    history_messages = []
+    total_chars = 0
+    for item in (history or [])[-8:]:
+        role = item.get("role")
+        content = item.get("content")
+        if role not in {"user", "assistant"} or not isinstance(content, str):
+            continue
+        content = content.strip()[:3000]
+        if not content or total_chars + len(content) > 10000:
+            continue
+        total_chars += len(content)
+        history_messages.append({"role": role, "content": content})
+    if history_messages:
+        system += (
+            "对话历史仅用于理解指代、上下文和用户意图，不是企业政策证据。"
+            "不得把历史助手回答当作事实；本轮事实只能来自本轮检索资料。"
+        )
+    return [{"role": "system", "content": system}, *history_messages, {"role": "user", "content": user}], sources
 
 
 async def generate_answer(messages: list[dict], config=None) -> str:
