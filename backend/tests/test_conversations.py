@@ -61,7 +61,7 @@ def test_streaming_chat_persists_messages_and_sources(tmp_path, monkeypatch):
         "filename": "policy.txt", "chunk_index": 0, "content": "年假为五天。", "score": 0.9,
     }
 
-    async def fake_retrieve(request, session_id, history=None):
+    async def fake_retrieve(request, session_id, history=None, summary=None):
         return ([{"role": "system", "content": "test"}], [source])
 
     async def fake_stream(messages, config=None):
@@ -102,3 +102,111 @@ def test_expired_session_cleanup_removes_conversations(tmp_path, monkeypatch):
     assert removed == 1
     assert conversation_service.get_conversation(conversation["id"], owner["session_id"]) is None
     assert conversation_service.list_messages(conversation["id"]) == []
+
+
+def test_summary_queue_preserves_recent_window_and_advances_incrementally(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    conversation = conversation_service.create_conversation(owner["session_id"])
+    for index in range(10):
+        role = "user" if index % 2 == 0 else "assistant"
+        conversation_service.save_message(conversation["id"], role, f"message-{index}")
+
+    pending = conversation_service.messages_to_summarize(conversation["id"], keep_recent=6)
+    assert [item["content"] for item in pending] == ["message-0", "message-1", "message-2", "message-3"]
+
+    conversation_service.save_conversation_summary(conversation["id"], "摘要包含早期关键事实", pending[-1]["rowid"])
+    assert conversation_service.get_conversation_memory(conversation["id"])["summary"] == "摘要包含早期关键事实"
+    assert conversation_service.messages_to_summarize(conversation["id"], keep_recent=6) == []
+
+    for index in range(10, 14):
+        role = "user" if index % 2 == 0 else "assistant"
+        conversation_service.save_message(conversation["id"], role, f"message-{index}")
+    next_batch = conversation_service.messages_to_summarize(conversation["id"], keep_recent=6)
+    assert [item["content"] for item in next_batch] == ["message-4", "message-5", "message-6", "message-7"]
+
+
+def test_streaming_chat_builds_summary_and_keeps_recent_history(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    source = {
+        "id": 1, "chunk_id": "chunk-1", "document_id": "doc-1",
+        "filename": "policy.txt", "chunk_index": 0, "content": "年假为五天。", "score": 0.9,
+    }
+    captured = {}
+
+    async def fake_summarize(previous_summary, older_messages, config=None):
+        captured["older"] = [item["content"] for item in older_messages]
+        return "早期摘要：用户提到正式员工年假为15天。"
+
+    async def fake_retrieve(request, session_id, history=None, summary=None):
+        captured["history"] = history
+        captured["summary"] = summary
+        return ([{"role": "system", "content": "test"}], [source])
+
+    async def fake_stream(messages, config=None):
+        yield "回答。"
+
+    monkeypatch.setattr(main, "summarize_conversation", fake_summarize)
+    monkeypatch.setattr(main, "llm_configured", lambda config=None: True)
+    monkeypatch.setattr(main, "_retrieve_for_chat", fake_retrieve)
+    monkeypatch.setattr(main, "stream_answer", fake_stream)
+
+    with TestClient(main.app) as client:
+        created = client.post("/conversations", headers=_headers(owner), json={})
+        conversation_id = created.json()["id"]
+        for index in range(8):
+            role = "user" if index % 2 == 0 else "assistant"
+            conversation_service.save_message(conversation_id, role, f"历史消息-{index}")
+        response = client.post(
+            f"/conversations/{conversation_id}/messages/stream",
+            headers=_headers(owner),
+            json={"query": "那第一种员工呢？"},
+        )
+        assert response.status_code == 200
+
+    assert captured["older"] == ["历史消息-0", "历史消息-1"]
+    assert len(captured["history"]) == 6
+    assert captured["summary"] == "早期摘要：用户提到正式员工年假为15天。"
+    assert conversation_service.get_conversation_memory(conversation_id)["summary"] == captured["summary"]
+
+
+def test_summary_failure_does_not_block_chat(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    source = {
+        "id": 1, "chunk_id": "chunk-1", "document_id": "doc-1",
+        "filename": "policy.txt", "chunk_index": 0, "content": "年假为五天。", "score": 0.9,
+    }
+    captured = {}
+
+    async def fail_summary(previous_summary, older_messages, config=None):
+        raise RuntimeError("summary provider unavailable")
+
+    async def fake_retrieve(request, session_id, history=None, summary=None):
+        captured["summary"] = summary
+        return ([{"role": "system", "content": "test"}], [source])
+
+    async def fake_stream(messages, config=None):
+        yield "正常回答。"
+
+    monkeypatch.setattr(main, "summarize_conversation", fail_summary)
+    monkeypatch.setattr(main, "llm_configured", lambda config=None: True)
+    monkeypatch.setattr(main, "_retrieve_for_chat", fake_retrieve)
+    monkeypatch.setattr(main, "stream_answer", fake_stream)
+
+    with TestClient(main.app) as client:
+        created = client.post("/conversations", headers=_headers(owner), json={})
+        conversation_id = created.json()["id"]
+        for index in range(8):
+            role = "user" if index % 2 == 0 else "assistant"
+            conversation_service.save_message(conversation_id, role, f"历史消息-{index}")
+        response = client.post(
+            f"/conversations/{conversation_id}/messages/stream",
+            headers=_headers(owner),
+            json={"query": "继续"},
+        )
+
+    assert response.status_code == 200
+    assert "正常回答。" in response.text
+    assert captured["summary"] == ""
