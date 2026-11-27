@@ -213,3 +213,65 @@ Goal: validate retrieval across multiple documents without changing the embeddin
 Paste this instruction:
 
 “请先阅读仓库 docs/PROJECT_CONTEXT.md 和 docs/CHANGELOG.md，以它们为项目交接依据。先核对 GitHub main 最新 Commit 和当前任务状态；区分仓库事实与线上部署状态。B2 三种检索模式的用户报告已完成比较，下一步从多轮对话 UI 与后端 Conversation 设计开始。先只读检查现有实现并给出完整实施方案，等待我批准后再修改代码。”
+
+## 11. B2 retrieval evaluation — final three-mode comparison (2026-11-27)
+
+### Evidence and run scope
+
+- The user supplied the Keyword, Vector, and Hybrid JSON reports in this conversation. This section records the reported results; it is not an independent rerun of the workflow.
+- All three reports identify dataset `enterprise_rag_b2_compact`, version `1.0.0`, 40 questions, six corpus documents, and the same category distribution: 10 single-document, 8 semantic paraphrase, 8 distractor, 5 multi-document, 4 no-answer, and 5 complex-scenario questions.
+- Each report records all six documents as `embedding_status: indexed`, with two chunks per document. Vector reports `available: true`; Hybrid reports `available: true` and `effective_modes: ["hybrid"]`, so neither is reported as unavailable or silently falling back.
+- All three reports say `reranker_statuses: ["not_requested"]`; no reranker comparison has been performed.
+- The existing `text-embedding-v1` baseline was retained. The results below are retrieval/evidence-ranking measurements, not answer correctness, citation faithfulness, or end-to-end user satisfaction.
+
+### Aggregate metrics
+
+| Metric | Mode | @1 | @3 | @5 |
+|---|---|---:|---:|---:|
+| Recall | Keyword | 88.89% | 100.00% | 100.00% |
+| Recall | Vector | 91.67% | 97.22% | 100.00% |
+| Recall | Hybrid | **94.44%** | 97.22% | 100.00% |
+| Evidence Recall | Keyword | 82.87% | **94.91%** | 95.83% |
+| Evidence Recall | Vector | 86.57% | 94.44% | 100.00% |
+| Evidence Recall | Hybrid | **88.43%** | 93.52% | **100.00%** |
+| Evidence Complete | Keyword | 77.78% | 88.89% | 91.67% |
+| Evidence Complete | Vector | 80.56% | **91.67%** | **100.00%** |
+| Evidence Complete | Hybrid | **83.33%** | 88.89% | **100.00%** |
+| Source Coverage | Keyword | 86.11% | **100.00%** | 100.00% |
+| Source Coverage | Vector | 94.44% | 100.00% | 100.00% |
+| Source Coverage | Hybrid | **91.67%** | 97.22% | 100.00% |
+
+- MRR: Keyword 0.9306; Vector 0.9514; Hybrid 0.9653.
+- The three modes reach 100% Recall@5. Vector and Hybrid reach 100% Evidence Recall@5 and Evidence Complete@5; Keyword Evidence Complete@5 is 91.67%.
+- Hybrid leads on Recall@1, Evidence Recall@1, Evidence Complete@1, and MRR. Vector leads Evidence Complete@3 and ties Hybrid at @5. Keyword leads Evidence Recall@3 and Source Coverage@3. No single mode dominates every cutoff/metric.
+
+### Category and case-level interpretation
+
+- Single-document retrieval is strong across modes; Vector reports 10/10 perfect across its single-document category metrics.
+- Semantic paraphrase remains less consistent at the top ranks. In particular, SP-002 ranks the correct evidence fourth in both the supplied Vector and Hybrid reports; the Keyword report also identifies this as a ranking weakness.
+- Multi-document performance is generally strong by @5, but MD-001 demonstrates that a correct first source does not guarantee complete evidence at @1. The supplied Vector report reaches complete evidence by @3; Hybrid reaches it by @5. Keyword also showed incomplete multi-evidence retrieval in its report.
+- Complex scenarios are the clearest weakness at shallow cutoffs. For Vector, category Evidence Complete is 20% at @1, 60% at @3, and 100% at @5. Hybrid is also 20% at @1, 60% at @3, and 100% at @5. Several CX cases require multiple retrieved passages before all required evidence is present.
+- The no-answer category reports `no_answer_nonempty@K = 1.0` for all three modes. This only means retrieval returned candidates for every no-answer query. It is not a false-positive rate and says nothing about whether the answer generator correctly abstains.
+
+### Current recommendation and limitations
+
+- Use Hybrid as the provisional default for the demo because it has the strongest first-result ranking (Recall@1 and MRR) and strongest Evidence Complete@1.
+- Keep Vector and Keyword available as comparison/baseline modes. Vector has the strongest Evidence Complete@3 and ties Hybrid at Evidence Complete@5; Keyword remains competitive at @3.
+- Do not change retrieval algorithms, embedding model, or production configuration solely on these results. First evaluate the existing optional reranker against the same B2 dataset and compare shallow-cutoff evidence completeness, especially SP-002, MD-001, and CX-001/CX-002/CX-003/CX-005.
+- The benchmark corpus is synthetic and small (six documents, 40 questions, two chunks per document in the reported run). These results are useful for controlled regression and portfolio demonstration, not a claim of production-grade accuracy.
+- A retrieval candidate being present is not proof that the answer is supported. A separate answer-generation evaluation is still needed for correctness, groundedness, citation validity, and abstention on unsupported questions.
+
+## 12. Next workstream — conversational product experience
+
+The user confirmed moving on after the B2 evaluation summary. Proposed next phase (implementation still subject to normal code-change approval):
+
+1. **P0 archive:** record the B2 three-mode results and conclusions in this project context and changelog. (This documentation update.)
+2. **P1 chat UI:** replace the single-turn answer panel with a conversation view, message bubbles, persistent bottom composer, new conversation action, conversation list, streaming output, stop-generation control, and per-answer source display.
+3. **P1 backend conversations:** introduce Conversation identity separate from the knowledge-base Session; bind each conversation to one Session; store messages; load bounded recent history server-side; retain sources per assistant turn.
+4. **P1 follow-up understanding:** support contextual follow-ups without allowing prior assistant text to override retrieved policy evidence. Keep the existing SSE streaming path where practical.
+5. **Acceptance scenarios:** ask about annual leave then follow up about probation; ask an unrelated expense question; start a new conversation and verify no old conversational context leaks across; verify source citations remain attached to the correct answer.
+6. **P2 quality and safety:** query rewriting, multi-document synthesis, answer abstention, citation validation, and prompt-injection regression tests.
+7. **P3 productization:** durable storage, operational observability, deployment verification, architecture/demo materials, and résumé/interview artifacts.
+
+No application code, workflow, Render setting, or deployment was changed as part of this documentation update.
+
