@@ -2,7 +2,7 @@ import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } fr
 import {
   Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2,
   AlertCircle, Search, Send, BookOpen, Settings, Plus, Trash2, Square,
-  MessageSquare, PanelLeftClose, PanelLeftOpen, Menu, X,
+  MessageSquare, PanelLeftClose, PanelLeftOpen, Menu,
 } from "lucide-react";
 import { readSSEStream } from "./services/stream";
 import ChatMessage from "./components/chat/ChatMessage";
