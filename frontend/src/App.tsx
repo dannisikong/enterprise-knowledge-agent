@@ -2,7 +2,7 @@ import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } fr
 import {
   Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2,
   AlertCircle, Search, Send, BookOpen, Settings, Plus, Trash2, Square,
-  MessageSquare, PanelLeftClose, PanelLeftOpen,
+  MessageSquare, PanelLeftClose, PanelLeftOpen, Menu,
 } from "lucide-react";
 import { readSSEStream } from "./services/stream";
 import ChatMessage from "./components/chat/ChatMessage";
@@ -56,6 +56,7 @@ export default function App() {
   const [pageMessage, setPageMessage] = useState("");
   const [pageError, setPageError] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedSources, setExpandedSources] = useState<string[]>([]);
   const [highlightedSource, setHighlightedSource] = useState<string | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -109,6 +110,7 @@ export default function App() {
     setChatItems([]);
     await loadConversations();
     setActiveSection("chat");
+    setMobileMenuOpen(false);
     chatInputRef.current?.focus();
   };
 
@@ -123,6 +125,7 @@ export default function App() {
     try { await loadMessages(id); }
     catch (error) { setChatError(error instanceof Error ? error.message : "加载对话失败"); }
     setActiveSection("chat");
+    setMobileMenuOpen(false);
   };
 
   const removeConversation = async (id: string) => {
@@ -293,7 +296,8 @@ export default function App() {
   const activeTitle = conversations.find(item => item.id === activeConversationId)?.title || "新对话";
 
   return <main className={"shell app-shell" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
-    <aside className="sidebar">
+    {mobileMenuOpen && <button className="mobile-drawer-backdrop" aria-label="关闭导航菜单" onClick={() => setMobileMenuOpen(false)} />}
+    <aside className={"sidebar" + (mobileMenuOpen ? " mobile-sidebar-open" : "")} aria-label="主导航">
       <div className="brand"><span className="brand-mark"><Bot size={21} /></span>{!sidebarCollapsed && <span>KnowFlow</span>}</div>
       <button className="new-chat-button" onClick={() => createConversation().catch(error => setChatError(error instanceof Error ? error.message : "创建对话失败"))}><Plus size={16} />{!sidebarCollapsed && "新建对话"}</button>
       {!sidebarCollapsed && <>
@@ -308,8 +312,8 @@ export default function App() {
           </div>)}
         </div>
         <div className="workspace-label workspace-secondary">工作空间</div>
-        <button className={"nav-item" + (activeSection === "chat" ? " active" : "")} onClick={() => setActiveSection("chat")}><Sparkles size={17} /> 智能问答</button>
-        <button className={"nav-item" + (activeSection === "documents" ? " active" : "")} onClick={() => setActiveSection("documents")}><FileText size={17} /> 知识库管理</button>
+        <button className={"nav-item" + (activeSection === "chat" ? " active" : "")} onClick={() => { setActiveSection("chat"); setMobileMenuOpen(false); }}><Sparkles size={17} /> 智能问答</button>
+        <button className={"nav-item" + (activeSection === "documents" ? " active" : "")} onClick={() => { setActiveSection("documents"); setMobileMenuOpen(false); }}><FileText size={17} /> 知识库管理</button>
       </>}
       <div className="sidebar-bottom"><div className={"status-dot " + (health === "ok" ? "online" : "")} />{!sidebarCollapsed && <span>API {health === "ok" ? "运行正常" : health === "error" ? "连接失败" : "检查中"}</span>}</div>
       <button className="sidebar-collapse" onClick={() => setSidebarCollapsed(value => !value)} title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}>{sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}</button>
@@ -317,6 +321,7 @@ export default function App() {
 
     <section className="main-panel">
       <header className="topbar">
+        <button type="button" className="mobile-menu-trigger" aria-label="打开导航菜单" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(true)}><Menu size={20} /></button>
         <div><span className="eyebrow">ENTERPRISE KNOWLEDGE</span><h1>{activeSection === "chat" ? "企业知识助手" : "知识库管理"}</h1></div>
         <div className="topbar-actions">
           <button className="settings-trigger" onClick={() => setShowModelSettings(value => !value)}><Settings size={15} /> 模型设置</button>
