@@ -39,3 +39,11 @@ All entries are concise handover snapshots. This is not a raw chat transcript.
 - Added the next workstream for conversational UI and backend conversation/history support, with acceptance scenarios and safety/grounding constraints. Implementation remains subject to normal code-change approval.
 - Documentation commit for `PROJECT_CONTEXT.md`: `7c53bc550eb6391f09db1d677796500d3ae97f2c`.
 
+
+### 2026-11-27 evening GitHub verification
+
+- Verified current `main` HEAD `b11c73a701b62c3c2dee378f16efe7487821c9ef`; compare from application commit `a431fb4727818f9fab5c4bb3c1e85e7c466964c7` confirms subsequent changes are confined to the two project archive files.
+- Current-main CI run [45989001273](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45989001273) completed successfully; Backend tests and Frontend typecheck/build both passed.
+- Retrieval Evaluation runs [45986181481](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45986181481) and [45927059311](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45927059311) both completed successfully. Keyword, Vector, Hybrid, and artifact-upload steps passed; each produced a 10,791-byte report artifact retained until 2026-12-11. Artifact contents were not downloaded in this check, so no new metric values are asserted.
+- PRs #1–#6 are closed; no open PR was returned. Render deployment commit remains unverified.
+- No application code, workflow, configuration, or deployment setting was changed.
