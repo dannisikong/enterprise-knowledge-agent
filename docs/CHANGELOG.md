@@ -29,3 +29,13 @@ All entries are concise handover snapshots. This is not a raw chat transcript.
 - Identified multi-document / complex-scenario evidence coverage and semantic-paraphrase ranking as the main follow-up evaluation areas. The benchmark remains small and synthetic.
 - Closed the B2 three-mode comparison stage and documented the proposed P1 multi-turn chat UI / backend Conversation workstream and acceptance scenarios.
 - No application code, workflow, model, embedding configuration, Render setting, or deployment was changed. Application-code work still requires a separate implementation plan and explicit approval.
+
+## 2026-11-27
+
+- Recorded the user-provided B2 Keyword, Vector, and Hybrid reports in `docs/PROJECT_CONTEXT.md`; all three use dataset `enterprise_rag_b2_compact` v1.0.0 (40 questions, six documents) and report all six documents indexed.
+- Added the aggregate comparison for Recall, Evidence Recall, Evidence Complete, Source Coverage, and MRR. Hybrid leads on top-1 ranking; Vector leads Evidence Complete@3; Vector and Hybrid both reach 100% Evidence Complete@5; Keyword remains competitive at @3.
+- Recorded limitations: reranker was not requested; `no_answer_nonempty@K` measures candidate presence only, not false positives or answer abstention; the synthetic six-document/40-question benchmark is not production-grade evidence.
+- Provisional recommendation: Hybrid as the demo default, retaining Vector and Keyword for comparison. No retrieval algorithm, embedding model, application code, workflow, Render setting, or deployment was changed.
+- Added the next workstream for conversational UI and backend conversation/history support, with acceptance scenarios and safety/grounding constraints. Implementation remains subject to normal code-change approval.
+- Documentation commit for `PROJECT_CONTEXT.md`: `7c53bc550eb6391f09db1d677796500d3ae97f2c`.
+
