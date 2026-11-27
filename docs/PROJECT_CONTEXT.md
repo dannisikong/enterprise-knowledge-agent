@@ -132,8 +132,84 @@ Goal: validate retrieval across multiple documents without changing the embeddin
 - Recurring project-archive maintenance is narrowly authorized to update only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md`, committing docs-only changes to `main`; it must not change application code, workflows, configuration, branch protection, secrets, or Render.
 - Never store API keys, tokens, passwords, or confidential source documents in project docs.
 
-## 10. How to resume in a new ChatGPT conversation
+## 8. B2 retrieval evaluation — user-provided reports
+
+### Evaluation evidence and scope
+
+- User supplied Keyword, Vector, and Hybrid JSON reports for the same B2 dataset: `enterprise_rag_b2_compact`, version `1.0.0`, 40 questions, six synthetic policy documents, and the category distribution 10/8/8/5/4/5.
+- All three reports show all six documents as `embedding_status: indexed` with two chunks each. Each report identifies its own effective mode (keyword, vector, or hybrid); Hybrid did not fall back to Keyword.
+- All three reports state `reranker_statuses: ["not_requested"]`; this comparison is without reranking.
+- These are user-provided workflow report contents, not independently re-fetched artifacts. Treat the reported metrics as user-supplied experimental evidence.
+- The reports use the same dataset definition and embedding baseline, `text-embedding-v1`; no embedding-model change was made.
+
+### Aggregate comparison
+
+| Metric | Keyword | Vector | Hybrid |
+|---|---:|---:|---:|
+| Recall@1 | 0.8889 | 0.9167 | **0.9444** |
+| Recall@3 | **1.0000** | 0.9722 | 0.9722 |
+| Recall@5 | 1.0000 | 1.0000 | 1.0000 |
+| Evidence Recall@1 | 0.8287 | 0.8657 | **0.8843** |
+| Evidence Recall@3 | **0.9491** | 0.9444 | 0.9352 |
+| Evidence Recall@5 | 0.9583 | 1.0000 | **1.0000** |
+| Evidence Complete@1 | 0.7778 | 0.8056 | **0.8333** |
+| Evidence Complete@3 | 0.8889 | **0.9167** | 0.8889 |
+| Evidence Complete@5 | 0.9167 | **1.0000** | **1.0000** |
+| Source Coverage@1 | 0.8611 | 0.9444 | 0.9167 |
+| Source Coverage@3 | **1.0000** | **1.0000** | 0.9722 |
+| Source Coverage@5 | 1.0000 | 1.0000 | 1.0000 |
+| MRR | 0.9306 | 0.9514 | **0.9653** |
+
+### Interpretation and decision
+
+- Hybrid leads on top-1 retrieval: Recall@1, Evidence Recall@1, Evidence Complete@1, and MRR. It is the strongest current candidate for the default retrieval mode on this benchmark, subject to answer-quality testing; this is a recommendation, not a code/config change.
+- Vector leads Evidence Complete@3 (0.9167 versus 0.8889 for Keyword and Hybrid) and ties Hybrid at 100% Evidence Complete@5.
+- Keyword leads Recall@3 and Evidence Recall@3, so Hybrid is not uniformly best at every cutoff.
+- At @5, Vector and Hybrid achieve full evidence recall/completeness; Keyword Evidence Complete@5 is 0.9167.
+- Category-level patterns: all three modes are perfect on the 10 single-document questions at the reported cutoffs. Vector is strongest on the five multi-document questions (Evidence Recall@3/@5 and completeness@3/@5 all 1.0); Hybrid reaches full evidence completeness at @5 but its @3 completeness is 0.8. Complex scenarios remain the main weakness at small cutoffs: Hybrid and Vector reach Evidence Complete@1 of 0.2 and @3 of 0.6, while all modes reach full completeness by @5. Semantic paraphrase contains ranking misses, especially SP-002; the reports show that its gold evidence can rank as low as fourth.
+- Cases worth retaining as regression examples include SP-002, MD-001, CX-001, CX-002, CX-003, and CX-005. Inspect per-question evidence before changing retrieval logic.
+- The no-answer metric `no_answer_nonempty@K=1.0` only means retrieval returned candidates for all four no-answer questions. It does not measure false-positive relevance, answer hallucination, or whether the generator abstains. A separate judged refusal/answer-quality evaluation is required.
+- The current benchmark is small and synthetic (six documents, 40 questions). Do not generalize these scores to production accuracy.
+
+### Current stage status
+
+- B2 Keyword / Vector / Hybrid retrieval comparison: complete based on the three user-provided reports.
+- Reranker: not evaluated; all three reports say `not_requested`. Do not enable it by assumption. A focused reranker A/B test can be considered later if top-1 evidence ranking remains a bottleneck.
+- No retrieval algorithm, embedding model, workflow, Render configuration, or deployment was changed as part of this evaluation.
+- Recommended next workstream: move to the product-level multi-turn chat experience and conversation management, while preserving the current retrieval modes as evaluation baselines.
+
+## 9. Next workstream — multi-turn chat and conversational UI
+
+### P1 product scope
+
+1. Chat interface: conversation list, new conversation, message history, distinct user/assistant message bubbles, persistent bottom composer, Markdown rendering, streaming output, stop generation, and per-answer source citations.
+2. Backend conversation model: distinct Conversation ID (not the existing knowledge-base Session ID), bind each conversation to its authorized Session, persist messages, and retrieve bounded history server-side.
+3. Multi-turn grounded context: resolve follow-up references using conversation context, but retrieve evidence for the current turn; prior assistant answers must not become authoritative facts. Keep each turn's citations attached to that answer.
+4. Isolation and lifecycle: a new conversation must not inherit another conversation's history; conversations must not cross Session boundaries.
+
+### Acceptance scenarios
+
+- Ask annual-leave allowance, then follow up with “What about during probation?”; the follow-up should resolve correctly and cite current retrieved evidence.
+- Ask about remote-work approval, then ask a short contextual follow-up such as “What about the start time?”.
+- Switch to an unrelated travel-expense question and ensure stale context does not distort retrieval.
+- Start a new conversation and verify it does not inherit the prior conversation's history.
+- Stop a streaming response and verify the UI returns to an input-ready state.
+- Verify citations/sources remain associated with the correct assistant message across multiple turns.
+
+### Change-control
+
+- The user confirmed the documentation/evaluation wrap-up and the proposed next-stage direction. This does not yet authorize application-code changes.
+- Before changing application code, inspect the current frontend/backend implementation and present a consolidated implementation plan with API/data model, persistence implications, tests, and migration considerations. Wait for explicit approval before coding.
+- Do not treat the existing knowledge-base Session as a Conversation ID. Do not assume Render's ephemeral filesystem is suitable for durable conversation history.
+
+## 10. Historical follow-up notes and unresolved checks
+
+- Earlier repository review flagged the B2 corpus as English-dominant (only CX-004 is Chinese) and found no `HR-005` in the current SD/SP/DI/MD/NA/CX dataset IDs. These are benchmark-design/documentation questions, not blockers to interpreting the three supplied runs; revisit only if a Chinese-language benchmark is required.
+- The validator script exists, but unless a run result is captured, do not claim it was executed.
+- The old `docs/retrieval-evaluation.md` and workflow comment may still describe the previous 35-question benchmark; they were not modified in this docs-only update.
+
+## 11. How to resume in a new ChatGPT conversation
 
 Paste this instruction:
 
-“请先阅读仓库 docs/PROJECT_CONTEXT.md 和 docs/CHANGELOG.md，以它们为项目交接依据。先核对 GitHub main 最新 Commit 和当前任务状态；区分仓库事实与线上部署状态。遵守文档中的变更审批规则，从 Next actions 第一项继续，不要从零规划。”
+“请先阅读仓库 docs/PROJECT_CONTEXT.md 和 docs/CHANGELOG.md，以它们为项目交接依据。先核对 GitHub main 最新 Commit 和当前任务状态；区分仓库事实与线上部署状态。B2 三种检索模式的用户报告已完成比较，下一步从多轮对话 UI 与后端 Conversation 设计开始。先只读检查现有实现并给出完整实施方案，等待我批准后再修改代码。”
