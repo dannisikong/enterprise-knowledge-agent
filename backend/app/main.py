@@ -583,6 +583,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
         model_started = None
         first_token_ms = None
         output_chars = 0
+        answer_parts: list[str] = []
         error = None
         try:
             yield event("sources", {
@@ -593,6 +594,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
             if not sources:
                 trace_status = "no_answer"
                 answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
+                answer_parts.append(answer)
                 output_chars = len(answer)
                 yield event("token", {"content": answer})
                 yield event("done", {"trace_id": trace_id})
@@ -602,6 +604,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
             async for token in stream_answer(messages, request.model_settings):
                 if first_token_ms is None:
                     first_token_ms = (time.perf_counter() - model_started) * 1000
+                answer_parts.append(token)
                 output_chars += len(token)
                 yield event("token", {"content": token})
             trace_status = "success"
@@ -623,7 +626,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
                 model_duration_ms=(time.perf_counter() - model_started) * 1000 if model_started else None,
                 first_token_ms=first_token_ms, input_chars=len(request.query), output_chars=output_chars,
                 error_type=type(error).__name__ if error else None,
-                question=request.query, answer=None, sources=sources,
+                question=request.query, answer="".join(answer_parts), sources=sources,
             )
 
     return StreamingResponse(
