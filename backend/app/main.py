@@ -17,6 +17,7 @@ from app.services.document_service import (
     list_documents,
     search_chunks,
     upload_document,
+    upload_zip_documents,
     reindex_documents,
     cleanup_session_documents,
 )
@@ -178,6 +179,30 @@ async def create_document(file: UploadFile = File(...), session: dict = Depends(
             reason=type(error).__name__,
         )
         raise HTTPException(status_code=422, detail="Unable to parse this document.") from error
+    finally:
+        await file.close()
+
+
+
+@app.post("/documents/archive", tags=["documents"])
+async def create_documents_archive(file: UploadFile = File(...), session: dict = Depends(require_session)) -> dict:
+    try:
+        return await upload_zip_documents(file, session["id"])
+    except ValueError as error:
+        audit_security_event(
+            "document_archive_upload_rejected",
+            session_id=session["id"],
+            reason=type(error).__name__,
+        )
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        audit_security_event(
+            "document_archive_upload_failed",
+            session_id=session["id"],
+            reason=type(error).__name__,
+        )
+        logger.exception("ZIP document import failed")
+        raise HTTPException(status_code=422, detail="Unable to process this ZIP archive.") from error
     finally:
         await file.close()
 
