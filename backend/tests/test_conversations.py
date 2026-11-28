@@ -62,6 +62,14 @@ def test_streaming_chat_persists_messages_and_sources(tmp_path, monkeypatch):
     }
 
     async def fake_retrieve(request, session_id, history=None, summary=None, trace_context=None):
+        if trace_context is not None:
+            trace_context.update({
+                "requested_mode": "hybrid",
+                "effective_mode": "hybrid",
+                "reranker_status": "not_requested",
+                "retrieved_chunks": [source],
+                "retrieval_duration_ms": 2.5,
+            })
         return ([{"role": "system", "content": "test"}], [source])
 
     async def fake_stream(messages, config=None):
@@ -82,6 +90,13 @@ def test_streaming_chat_persists_messages_and_sources(tmp_path, monkeypatch):
         assert response.status_code == 200
         assert "event: token" in response.text
         assert "assistant_message_id" in response.text
+        assert "trace_id" in response.text
+        traces = client.get("/traces", headers=_headers(owner)).json()
+        assert len(traces) == 1
+        trace_detail = client.get(f"/traces/{traces[0]['trace_id']}", headers=_headers(owner)).json()
+        assert trace_detail["status"] == "success"
+        assert trace_detail["retrieved_chunks"][0]["chunk_id"] == "chunk-1"
+        assert "content" not in trace_detail["retrieved_chunks"][0]
         history = client.get(
             f"/conversations/{conversation_id}/messages", headers=_headers(owner)
         ).json()["messages"]
