@@ -41,17 +41,24 @@ def test_zip_upload_imports_multiple_documents_independently(tmp_path, monkeypat
     assert len({item["id"] for item in result["documents"]}) == 2
 
 
-def test_zip_upload_skips_unsupported_and_nested_archives(tmp_path, monkeypatch):
+def test_zip_upload_skips_unsupported_file_types(tmp_path, monkeypatch):
     _configure_storage(tmp_path, monkeypatch)
     payload = _zip([
         ("guide.txt", b"Readable content"),
         ("image.png", b"not an image"),
-        ("nested.zip", b"not extracted"),
     ])
     result = asyncio.run(service.upload_zip_documents(_upload("bundle.zip", payload), "session-a"))
     assert result["uploaded_count"] == 1
-    assert result["skipped_count"] == 2
+    assert result["skipped_count"] == 1
     assert len(service.list_documents("session-a")) == 1
+
+
+def test_zip_upload_rejects_nested_archives(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    payload = _zip([("nested.zip", b"not extracted")])
+    with pytest.raises(ValueError, match="Nested ZIP"):
+        asyncio.run(service.upload_zip_documents(_upload("bundle.zip", payload), "session-a"))
+    assert service.list_documents("session-a") == []
 
 
 def test_zip_upload_rejects_path_traversal_before_import(tmp_path, monkeypatch):
