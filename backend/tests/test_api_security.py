@@ -88,3 +88,44 @@ def test_api_reindex_only_updates_current_sessions_documents(tmp_path, monkeypat
         ).fetchone()["embedding"]
     assert owner_vector is not None
     assert other_vector is None
+
+
+
+def test_api_deletes_only_owned_document_and_cleans_storage(tmp_path, monkeypatch):
+    _configure_test_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    visitor = create_session()
+    _seed_document("owned-doc", owner["session_id"], "owned content")
+    document_service.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    stored_file = document_service.UPLOAD_DIR / "owned-doc.txt"
+    stored_file.write_text("source", encoding="utf-8")
+    with TestClient(main.app) as client:
+        denied = client.delete("/documents/owned-doc", headers={"X-Session-Token": visitor["token"]})
+        deleted = client.delete("/documents/owned-doc", headers={"X-Session-Token": owner["token"]})
+    assert denied.status_code == 404
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert not stored_file.exists()
+    with document_service._connect() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM documents WHERE id = 'owned-doc'").fetchone()[0] == 0
+        assert connection.execute("SELECT COUNT(*) FROM document_chunks WHERE document_id = 'owned-doc'").fetchone()[0] == 0
+
+
+def test_api_reindexes_only_owned_document(tmp_path, monkeypatch):
+    _configure_test_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    visitor = create_session()
+    _seed_document("owned-doc", owner["session_id"], "owned content")
+    monkeypatch.setattr(document_service, "embeddings_configured", lambda: True)
+
+    async def fake_embeddings(texts):
+        return [[0.1, 0.2] for _ in texts]
+
+    monkeypatch.setattr(document_service, "create_embeddings", fake_embeddings)
+    with TestClient(main.app) as client:
+        denied = client.post("/documents/owned-doc/reindex", headers={"X-Session-Token": visitor["token"]})
+        indexed = client.post("/documents/owned-doc/reindex", headers={"X-Session-Token": owner["token"]})
+    assert denied.status_code == 404
+    assert indexed.status_code == 200
+    assert indexed.json()["status"] == "indexed"
+    assert indexed.json()["embedded_chunk_count"] == 1

@@ -374,3 +374,25 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
   .app-shell .sidebar { transition: none; }
 }
+
+
+/* Knowledge base management */
+.knowledge-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 18px 0 24px; }
+.knowledge-stat { display: flex; flex-direction: column; gap: 8px; padding: 15px 16px; border: 1px solid #29364b; border-radius: 12px; background: #131e2e66; }
+.knowledge-stat span { color: #91a0b8; font-size: 12px; }
+.knowledge-stat strong { color: #edf1fb; font-size: 23px; line-height: 1.2; font-weight: 650; font-variant-numeric: tabular-nums; }
+.document-status { display: inline-flex; align-items: center; gap: 5px; color: #91a0b8; font-size: 11px; }
+.document-status svg { color: #6fc6a0; }
+.document-actions { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
+.document-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 10px; border: 1px solid #35435a; border-radius: 8px; color: #c6d0e2; background: #182538; font: inherit; font-size: 11px; cursor: pointer; }
+.document-actions button:hover:not(:disabled) { border-color: #7e70c8; color: #e7e0ff; }
+.document-actions button.document-delete { color: #e6a0a0; border-color: #65414a; background: #321f2a66; }
+.document-actions button:disabled { opacity: .5; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .knowledge-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 14px 0 20px; }
+  .knowledge-stat { padding: 12px; }
+  .knowledge-stat strong { font-size: 20px; }
+  .document-row { flex-wrap: wrap; align-items: flex-start; }
+  .file-info { flex: 1 1 calc(100% - 54px); }
+  .document-actions { width: 100%; justify-content: flex-end; padding-left: 49px; }
+}
