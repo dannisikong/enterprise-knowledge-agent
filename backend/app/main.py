@@ -431,7 +431,7 @@ async def conversation_chat_stream(
 
     async def event_stream():
         def event(name: str, payload: dict) -> str:
-            return f"event: {name}\\ndata: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
+            return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
         trace_status = "cancelled"
         model_started = None
@@ -554,7 +554,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
 
     async def event_stream():
         def event(name: str, payload: dict) -> str:
-            return f"event: {name}\\ndata: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
+            return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
         trace_status = "cancelled"
         model_started = None
