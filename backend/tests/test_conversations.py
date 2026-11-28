@@ -61,7 +61,7 @@ def test_streaming_chat_persists_messages_and_sources(tmp_path, monkeypatch):
         "filename": "policy.txt", "chunk_index": 0, "content": "年假为五天。", "score": 0.9,
     }
 
-    async def fake_retrieve(request, session_id, history=None, summary=None):
+    async def fake_retrieve(request, session_id, history=None, summary=None, trace_context=None):
         return ([{"role": "system", "content": "test"}], [source])
 
     async def fake_stream(messages, config=None):
@@ -139,7 +139,7 @@ def test_streaming_chat_builds_summary_and_keeps_recent_history(tmp_path, monkey
         captured["older"] = [item["content"] for item in older_messages]
         return "早期摘要：用户提到正式员工年假为15天。"
 
-    async def fake_retrieve(request, session_id, history=None, summary=None):
+    async def fake_retrieve(request, session_id, history=None, summary=None, trace_context=None):
         captured["history"] = history
         captured["summary"] = summary
         return ([{"role": "system", "content": "test"}], [source])
@@ -183,7 +183,7 @@ def test_summary_failure_does_not_block_chat(tmp_path, monkeypatch):
     async def fail_summary(previous_summary, older_messages, config=None):
         raise RuntimeError("summary provider unavailable")
 
-    async def fake_retrieve(request, session_id, history=None, summary=None):
+    async def fake_retrieve(request, session_id, history=None, summary=None, trace_context=None):
         captured["summary"] = summary
         return ([{"role": "system", "content": "test"}], [source])
 
