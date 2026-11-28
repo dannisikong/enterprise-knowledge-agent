@@ -607,29 +607,3 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
-
-async def chat_stream(request: ChatRequest, session: dict = Depends(require_session)):
-    messages, sources = await _retrieve_for_chat(request, session["id"])
-
-    async def event_stream():
-        def event(name: str, payload: dict) -> str:
-            return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
-
-        yield event("sources", {"sources": sources, "retrieval": {"mode": "hybrid", "result_count": len(sources)}})
-        if not sources:
-            yield event("token", {"content": "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"})
-            yield event("done", {})
-            return
-        try:
-            async for token in stream_answer(messages, request.model_settings):
-                yield event("token", {"content": token})
-            yield event("done", {})
-        except Exception:
-            logger.exception("LLM streaming response failed")
-            yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。"})
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
