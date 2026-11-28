@@ -58,6 +58,10 @@ def initialize_traces() -> None:
                 prompt_tokens INTEGER,
                 completion_tokens INTEGER,
                 error_type TEXT,
+                question TEXT,
+                answer TEXT,
+                sources_json TEXT NOT NULL DEFAULT '[]',
+                diagnostic_chunks_json TEXT NOT NULL DEFAULT '[]',
                 created_at TEXT NOT NULL
             )
         """)
@@ -69,12 +73,50 @@ def initialize_traces() -> None:
             "CREATE INDEX IF NOT EXISTS idx_request_traces_session_status "
             "ON request_traces(session_id, status, created_at DESC)"
         )
+        # Additive migration for databases created by earlier PR #13 versions.
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(request_traces)")}
+        for name, definition in (
+            ("question", "TEXT"),
+            ("answer", "TEXT"),
+            ("sources_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("diagnostic_chunks_json", "TEXT NOT NULL DEFAULT '[]'"),
+        ):
+            if name not in columns:
+                connection.execute(f"ALTER TABLE request_traces ADD COLUMN {name} {definition}")
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS trace_feedback (
+                id TEXT PRIMARY KEY,
+                trace_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                rating TEXT NOT NULL CHECK(rating IN ('correct', 'incorrect', 'retrieval_issue', 'citation_issue')),
+                comment TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(trace_id, session_id)
+            )
+        """)
 
 
 def _safe_chunks(chunks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     safe: list[dict[str, Any]] = []
     for item in (chunks or [])[:20]:
         safe.append({
+            "chunk_id": str(item.get("chunk_id", ""))[:80],
+            "document_id": str(item.get("document_id", ""))[:80],
+            "filename": str(item.get("filename", ""))[:255],
+            "chunk_index": item.get("chunk_index"),
+            "score": item.get("score"),
+            "rerank_score": item.get("rerank_score"),
+        })
+        if os.getenv("TRACE_CAPTURE_CHUNK_TEXT", "false").lower() in {"1", "true", "yes", "on"}:
+            safe[-1]["content"] = str(item.get("content", ""))[:4000]
+    return safe
+
+
+def _safe_sources(sources: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    safe: list[dict[str, Any]] = []
+    for item in (sources or [])[:20]:
+        safe.append({
+            "id": item.get("id"),
             "chunk_id": str(item.get("chunk_id", ""))[:80],
             "document_id": str(item.get("document_id", ""))[:80],
             "filename": str(item.get("filename", ""))[:255],
@@ -105,8 +147,11 @@ def record_trace(
     input_chars: int = 0,
     output_chars: int = 0,
     error_type: str | None = None,
+    question: str | None = None,
+    answer: str | None = None,
+    sources: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Persist operational metadata only; never store prompts, answers, chunk text or credentials."""
+    """Persist bounded diagnostic data; credentials and model prompts are never stored."""
     try:
         initialize_traces()
         chunks = _safe_chunks(retrieved_chunks)
@@ -118,8 +163,9 @@ def record_trace(
                     result_count, retrieved_chunks_json, model_name,
                     retrieval_duration_ms, model_duration_ms, first_token_ms,
                     total_duration_ms, input_chars, output_chars,
-                    prompt_tokens, completion_tokens, error_type, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)
+                    prompt_tokens, completion_tokens, error_type, question, answer,
+                    sources_json, diagnostic_chunks_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, ?, ?)
             """, (
                 trace_id, session_id, conversation_id, endpoint, status,
                 requested_mode, effective_mode, fallback_reason, reranker_status,
@@ -127,7 +173,11 @@ def record_trace(
                 (model_name or "")[:128] or None,
                 retrieval_duration_ms, model_duration_ms, first_token_ms,
                 max(0.0, float(total_duration_ms)), max(0, int(input_chars)),
-                max(0, int(output_chars)), (error_type or "")[:128] or None, _now(),
+                max(0, int(output_chars)), (error_type or "")[:128] or None,
+                (question or "")[:2000] or None, (answer or "")[:20000] or None,
+                json.dumps(_safe_sources(sources), ensure_ascii=False),
+                json.dumps(chunks if os.getenv("TRACE_CAPTURE_CHUNK_TEXT", "false").lower() in {"1", "true", "yes", "on"} else [], ensure_ascii=False),
+                _now(),
             ))
     except Exception:
         # Observability must never break the user's chat request.
@@ -179,7 +229,56 @@ def get_trace(trace_id: str, session_id: str) -> dict | None:
             "SELECT * FROM request_traces WHERE trace_id = ? AND session_id = ?",
             (trace_id, session_id),
         ).fetchone()
-    return _trace_from_row(row) if row else None
+    if not row:
+        return None
+    item = _trace_from_row(row)
+    try:
+        item["sources"] = json.loads(item.pop("sources_json") or "[]")
+    except (TypeError, ValueError):
+        item["sources"] = []
+    try:
+        item["diagnostic_chunks"] = json.loads(item.pop("diagnostic_chunks_json") or "[]")
+    except (TypeError, ValueError):
+        item["diagnostic_chunks"] = []
+    return item
+
+
+def submit_feedback(trace_id: str, session_id: str, rating: str, comment: str | None = None) -> dict | None:
+    if rating not in {"correct", "incorrect", "retrieval_issue", "citation_issue"}:
+        raise ValueError("Unsupported feedback rating.")
+    initialize_traces()
+    feedback_id = str(uuid4())
+    created_at = _now()
+    with _connect() as connection:
+        exists = connection.execute(
+            "SELECT 1 FROM request_traces WHERE trace_id = ? AND session_id = ?",
+            (trace_id, session_id),
+        ).fetchone()
+        if not exists:
+            return None
+        connection.execute("""
+            INSERT INTO trace_feedback (id, trace_id, session_id, rating, comment, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(trace_id, session_id) DO UPDATE SET
+                rating = excluded.rating, comment = excluded.comment, created_at = excluded.created_at
+        """, (feedback_id, trace_id, session_id, rating, (comment or "")[:1000] or None, created_at))
+    return {"trace_id": trace_id, "rating": rating, "comment": (comment or "")[:1000] or None, "created_at": created_at}
+
+
+def cleanup_expired_traces(retention_days: int | None = None) -> int:
+    if retention_days is None:
+        try:
+            retention_days = int(os.getenv("TRACE_RETENTION_DAYS", "30"))
+        except ValueError:
+            retention_days = 30
+    retention_days = max(1, min(retention_days, 3650))
+    cutoff = datetime.now(timezone.utc).timestamp() - retention_days * 86400
+    cutoff_iso = datetime.fromtimestamp(cutoff, timezone.utc).isoformat()
+    initialize_traces()
+    with _connect() as connection:
+        connection.execute("DELETE FROM trace_feedback WHERE trace_id IN (SELECT trace_id FROM request_traces WHERE created_at < ?)", (cutoff_iso,))
+        cursor = connection.execute("DELETE FROM request_traces WHERE created_at < ?", (cutoff_iso,))
+    return cursor.rowcount
 
 
 def cleanup_session_traces(session_ids: list[str]) -> int:
