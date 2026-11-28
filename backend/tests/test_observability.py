@@ -50,11 +50,18 @@ def test_trace_storage_is_session_scoped_and_excludes_content(tmp_path, monkeypa
         }],
         input_chars=8,
         output_chars=42,
+        question="PRIVATE QUESTION",
+        answer="PRIVATE ANSWER",
+        sources=[{"filename": "policy.txt", "chunk_index": 2}],
     )
 
     trace = observability_service.get_trace(trace_id, owner["session_id"])
     assert trace is not None
     assert trace["effective_mode"] == "keyword_fallback"
+    assert trace["question"] == "PRIVATE QUESTION"
+    assert trace["answer"] == "PRIVATE ANSWER"
+    assert trace["sources"] == [{"filename": "policy.txt", "chunk_index": 2}]
+    assert trace["diagnostic_chunks"] == []
     assert trace["retrieved_chunks"][0]["chunk_id"] == "chunk-1"
     assert "content" not in trace["retrieved_chunks"][0]
     assert observability_service.get_trace(trace_id, other["session_id"]) is None
@@ -97,3 +104,92 @@ def test_trace_cleanup_removes_expired_session_records(tmp_path, monkeypatch):
 
     assert observability_service.cleanup_session_traces([owner["session_id"]]) == 1
     assert observability_service.list_traces(owner["session_id"]) == []
+
+
+
+def test_trace_feedback_is_session_scoped_and_updatable(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    visitor = create_session()
+    trace_id = observability_service.new_trace_id()
+    observability_service.record_trace(
+        trace_id=trace_id,
+        session_id=owner["session_id"],
+        endpoint="chat",
+        status="success",
+        total_duration_ms=10,
+        question="question",
+        answer="answer",
+    )
+
+    with TestClient(main.app) as client:
+        denied = client.post(
+            f"/traces/{trace_id}/feedback",
+            headers=_headers(visitor),
+            json={"rating": "incorrect", "comment": "not my trace"},
+        )
+        assert denied.status_code == 404
+        submitted = client.post(
+            f"/traces/{trace_id}/feedback",
+            headers=_headers(owner),
+            json={"rating": "incorrect", "comment": "wrong evidence"},
+        )
+        assert submitted.status_code == 200
+        assert submitted.json()["rating"] == "incorrect"
+        updated = client.post(
+            f"/traces/{trace_id}/feedback",
+            headers=_headers(owner),
+            json={"rating": "retrieval_issue"},
+        )
+        assert updated.status_code == 200
+        assert updated.json()["rating"] == "retrieval_issue"
+        invalid = client.post(
+            f"/traces/{trace_id}/feedback",
+            headers=_headers(owner),
+            json={"rating": "maybe"},
+        )
+        assert invalid.status_code == 400
+
+
+def test_diagnostic_chunk_text_is_opt_in_and_bounded(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    monkeypatch.setenv("TRACE_CAPTURE_CHUNK_TEXT", "true")
+    trace_id = observability_service.new_trace_id()
+    observability_service.record_trace(
+        trace_id=trace_id,
+        session_id=owner["session_id"],
+        endpoint="chat",
+        status="success",
+        total_duration_ms=10,
+        retrieved_chunks=[{
+            "chunk_id": "chunk-1",
+            "document_id": "doc-1",
+            "filename": "policy.txt",
+            "chunk_index": 0,
+            "content": "DIAGNOSTIC SOURCE TEXT",
+        }],
+    )
+    trace = observability_service.get_trace(trace_id, owner["session_id"])
+    assert trace["diagnostic_chunks"][0]["content"] == "DIAGNOSTIC SOURCE TEXT"
+
+
+def test_trace_retention_deletes_old_records_and_feedback(tmp_path, monkeypatch):
+    _configure_storage(tmp_path, monkeypatch)
+    owner = create_session()
+    trace_id = observability_service.new_trace_id()
+    observability_service.record_trace(
+        trace_id=trace_id,
+        session_id=owner["session_id"],
+        endpoint="chat",
+        status="success",
+        total_duration_ms=10,
+    )
+    with observability_service._connect() as connection:
+        connection.execute(
+            "UPDATE request_traces SET created_at = ? WHERE trace_id = ?",
+            ("2000-01-01T00:00:00+00:00", trace_id),
+        )
+    observability_service.submit_feedback(trace_id, owner["session_id"], "correct")
+    assert observability_service.cleanup_expired_traces(retention_days=1) == 1
+    assert observability_service.get_trace(trace_id, owner["session_id"]) is None
