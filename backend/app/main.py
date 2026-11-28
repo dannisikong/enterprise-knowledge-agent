@@ -19,6 +19,8 @@ from app.services.document_service import (
     upload_document,
     upload_zip_documents,
     reindex_documents,
+    reindex_document,
+    delete_document,
     cleanup_session_documents,
 )
 from app.services.llm_service import (
@@ -217,6 +219,44 @@ async def reindex_session_documents(session: dict = Depends(require_session)) ->
     try:
         return await reindex_documents(session["id"])
     except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
+@app.delete("/documents/{document_id}", tags=["documents"])
+async def remove_document(document_id: str, session: dict = Depends(require_session)) -> dict:
+    if not delete_document(document_id, session["id"]):
+        audit_security_event(
+            "document_access_denied",
+            session_id=session["id"],
+            resource_id=document_id,
+            reason="delete_not_found_or_not_owned",
+        )
+        raise HTTPException(status_code=404, detail="Document not found.")
+    audit_security_event("document_deleted", session_id=session["id"], resource_id=document_id)
+    return {"deleted": True}
+
+
+@app.post("/documents/{document_id}/reindex", tags=["documents"])
+async def reindex_one_document(document_id: str, session: dict = Depends(require_session)) -> dict:
+    try:
+        result = await reindex_document(document_id, session["id"])
+        if result["status"] == "failed":
+            audit_security_event(
+                "document_reindex_failed",
+                session_id=session["id"],
+                resource_id=document_id,
+                reason="embedding_generation_failed",
+            )
+        return result
+    except ValueError as error:
+        if str(error) == "Document not found.":
+            audit_security_event(
+                "document_access_denied",
+                session_id=session["id"],
+                resource_id=document_id,
+                reason="reindex_not_found_or_not_owned",
+            )
+            raise HTTPException(status_code=404, detail="Document not found.") from error
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
