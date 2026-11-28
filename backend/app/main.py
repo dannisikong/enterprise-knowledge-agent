@@ -38,6 +38,7 @@ from app.services.rate_limit_service import rate_limiter, session_creation_limit
 from app.services.security_audit_service import audit_security_event
 from app.services.observability_service import (
     new_trace_id, record_trace, list_traces, get_trace, cleanup_session_traces,
+    cleanup_expired_traces, submit_feedback,
 )
 from app.services.conversation_service import (
     initialize_conversations, create_conversation, get_conversation, list_conversations,
@@ -96,6 +97,7 @@ def cleanup_expired_data() -> None:
     cleanup_session_conversations(expired)
     cleanup_session_documents(expired)
     cleanup_session_traces(expired)
+    cleanup_expired_traces()
     delete_sessions(expired)
 
 
@@ -401,6 +403,24 @@ async def request_trace_detail(
     return trace
 
 
+@app.post("/traces/{trace_id}/feedback", tags=["observability"])
+async def trace_feedback(
+    trace_id: str,
+    payload: dict,
+    session: dict = Depends(require_session),
+) -> dict:
+    try:
+        result = submit_feedback(
+            trace_id, session["id"], str(payload.get("rating", "")),
+            str(payload.get("comment", ""))[:1000] or None,
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    if result is None:
+        raise HTTPException(status_code=404, detail="Trace not found.")
+    return result
+
+
 @app.post("/conversations/{conversation_id}/messages/stream", tags=["conversations"])
 async def conversation_chat_stream(
     conversation_id: str,
@@ -485,6 +505,7 @@ async def conversation_chat_stream(
                 model_duration_ms=model_duration, first_token_ms=first_token_ms,
                 input_chars=len(request.query), output_chars=sum(len(part) for part in answer_parts),
                 error_type=type(error).__name__ if error else None,
+                question=request.query, answer="".join(answer_parts), sources=sources,
             )
 
     return StreamingResponse(
@@ -511,6 +532,7 @@ async def chat(request: ChatRequest, session: dict = Depends(require_session)) -
                 fallback_reason=trace_context.get("fallback_reason"), reranker_status=trace_context.get("reranker_status"),
                 retrieved_chunks=[], model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
                 retrieval_duration_ms=trace_context.get("retrieval_duration_ms"), input_chars=len(request.query),
+                question=request.query, answer=answer, sources=[],
             )
             return {"answer": answer, "sources": [], "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": 0}, "trace_id": trace_id}
 
@@ -526,6 +548,7 @@ async def chat(request: ChatRequest, session: dict = Depends(require_session)) -
             retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
             model_duration_ms=(time.perf_counter() - model_started) * 1000,
             input_chars=len(request.query), output_chars=len(answer),
+            question=request.query, answer=answer, sources=sources,
         )
         return {"answer": answer, "sources": sources, "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": len(sources)}, "trace_id": trace_id}
     except HTTPException:
@@ -540,7 +563,7 @@ async def chat(request: ChatRequest, session: dict = Depends(require_session)) -
             model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
             retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
             model_duration_ms=(time.perf_counter() - model_started) * 1000 if model_started else None,
-            input_chars=len(request.query), error_type=type(error).__name__,
+            input_chars=len(request.query), error_type=type(error).__name__, question=request.query,
         )
         raise HTTPException(status_code=502, detail="LLM provider request failed.") from error
 
@@ -600,6 +623,7 @@ async def chat_stream(request: ChatRequest, session: dict = Depends(require_sess
                 model_duration_ms=(time.perf_counter() - model_started) * 1000 if model_started else None,
                 first_token_ms=first_token_ms, input_chars=len(request.query), output_chars=output_chars,
                 error_type=type(error).__name__ if error else None,
+                question=request.query, answer=None, sources=sources,
             )
 
     return StreamingResponse(
