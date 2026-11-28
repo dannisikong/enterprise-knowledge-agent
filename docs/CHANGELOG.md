@@ -47,3 +47,13 @@ All entries are concise handover snapshots. This is not a raw chat transcript.
 - Retrieval Evaluation runs [45986181481](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45986181481) and [45927059311](https://github.com/dannisikong/enterprise-knowledge-agent/actions/runs/45927059311) both completed successfully. Keyword, Vector, Hybrid, and artifact-upload steps passed; each produced a 10,791-byte report artifact retained until 2026-12-11. Artifact contents were not downloaded in this check, so no new metric values are asserted.
 - PRs #1–#6 are closed; no open PR was returned. Render deployment commit remains unverified.
 - No application code, workflow, configuration, or deployment setting was changed.
+
+
+## 2026-11-28 — conversation delivery and current PR status
+
+- Re-checked `main`: latest HEAD is `0101185aaef729b218d2e6611aa6f5968e73cf97`, the merge commit for PR #9. No newer main commit was present during this check.
+- Verified PR #7 (backend conversation persistence/streaming), PR #8 (conversation chat UI), and PR #9 (mobile navigation/H5 layout) are merged. Their main-branch CI runs `45994164898`, `45997225402`, and `46003015497` all completed successfully; related PR CI runs also succeeded.
+- User confirmed on 2026-11-27 that PC chat interaction and H5 layout/navigation were working. This is recorded as user-confirmed runtime behavior; Render deployment SHA remains unverified.
+- Found PR #10, “feat: add rolling conversation summary memory”, still open and four commits ahead of main. Its PR CI run `46009069984` succeeded. The proposal summarizes older conversation messages while retaining the latest six raw messages; it is not merged and must not be treated as a main-branch or deployed capability.
+- Updated current priorities: review PR #10; validate multi-turn follow-ups, long-context behavior, session/conversation isolation, history restoration, and per-message citations. Chat UI, backend conversation support, and H5 navigation are no longer listed as features awaiting initial implementation.
+- No application code, workflow, configuration, branch protection, secrets, or Render settings were changed. Only the two authorized project archive files were updated.
