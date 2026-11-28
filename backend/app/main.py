@@ -3,6 +3,7 @@ import ipaddress
 import json
 import logging
 import os
+import time
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
@@ -35,6 +36,9 @@ from app.schemas.session import SessionResponse
 from app.services.session_service import create_session, get_session, initialize_sessions, cleanup_expired_sessions, delete_sessions
 from app.services.rate_limit_service import rate_limiter, session_creation_limiter
 from app.services.security_audit_service import audit_security_event
+from app.services.observability_service import (
+    new_trace_id, record_trace, list_traces, get_trace, cleanup_session_traces,
+)
 from app.services.conversation_service import (
     initialize_conversations, create_conversation, get_conversation, list_conversations,
     save_message, list_messages, recent_history, delete_conversation, cleanup_session_conversations,
@@ -91,6 +95,7 @@ def cleanup_expired_data() -> None:
     expired = cleanup_expired_sessions()
     cleanup_session_conversations(expired)
     cleanup_session_documents(expired)
+    cleanup_session_traces(expired)
     delete_sessions(expired)
 
 
@@ -282,15 +287,32 @@ async def search(request: SearchRequest, session: dict = Depends(require_session
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-async def _retrieve_for_chat(request: ChatRequest, session_id: str, history: list[dict] | None = None, summary: str | None = None) -> tuple[list[dict], list[dict]]:
+async def _retrieve_for_chat(
+    request: ChatRequest,
+    session_id: str,
+    history: list[dict] | None = None,
+    summary: str | None = None,
+    trace_context: dict | None = None,
+) -> tuple[list[dict], list[dict]]:
     if not llm_configured(request.model_settings):
         raise HTTPException(status_code=503, detail="Please configure a valid chat model in Model Settings.")
+    retrieval_started = time.perf_counter()
     try:
         retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
+    if trace_context is not None:
+        trace_context.update({
+            "requested_mode": retrieval.get("requested_mode", "hybrid"),
+            "effective_mode": retrieval.get("mode"),
+            "fallback_reason": retrieval.get("fallback_reason"),
+            "reranker_status": retrieval.get("reranker"),
+            "retrieved_chunks": retrieval.get("results", []),
+            "retrieval_duration_ms": (time.perf_counter() - retrieval_started) * 1000,
+        })
     messages, sources = build_grounded_messages(request.query, retrieval["results"], history=history, summary=summary)
     return messages, sources
+
 
 
 async def _prepare_conversation_summary(conversation_id: str, model_settings=None) -> str:
@@ -358,6 +380,27 @@ async def remove_conversation(
     return {"deleted": True}
 
 
+@app.get("/traces", tags=["observability"])
+async def request_traces(
+    limit: int = 50,
+    offset: int = 0,
+    status: Literal["success", "no_answer", "error", "cancelled"] | None = None,
+    session: dict = Depends(require_session),
+) -> list[dict]:
+    return list_traces(session["id"], limit=limit, offset=offset, status=status)
+
+
+@app.get("/traces/{trace_id}", tags=["observability"])
+async def request_trace_detail(
+    trace_id: str,
+    session: dict = Depends(require_session),
+) -> dict:
+    trace = get_trace(trace_id, session["id"])
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Trace not found.")
+    return trace
+
+
 @app.post("/conversations/{conversation_id}/messages/stream", tags=["conversations"])
 async def conversation_chat_stream(
     conversation_id: str,
@@ -376,38 +419,73 @@ async def conversation_chat_stream(
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty.")
 
+    trace_id = new_trace_id()
+    trace_started = time.perf_counter()
+    trace_context: dict = {}
     summary = await _prepare_conversation_summary(conversation_id, request.model_settings)
     history = recent_history(conversation_id, limit=6)
-    messages, sources = await _retrieve_for_chat(request, session["id"], history=history, summary=summary)
+    messages, sources = await _retrieve_for_chat(
+        request, session["id"], history=history, summary=summary, trace_context=trace_context
+    )
     user_message = save_message(conversation_id, "user", request.query.strip())
 
     async def event_stream():
         def event(name: str, payload: dict) -> str:
-            return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            return f"event: {name}\\ndata: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
 
-        yield event("sources", {
-            "sources": sources,
-            "retrieval": {"mode": "hybrid", "result_count": len(sources)},
-            "user_message_id": user_message["id"],
-        })
-        if not sources:
-            answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
-            assistant_message = save_message(conversation_id, "assistant", answer, [])
-            yield event("token", {"content": answer})
-            yield event("done", {"assistant_message_id": assistant_message["id"]})
-            return
-
+        trace_status = "cancelled"
+        model_started = None
+        first_token_ms = None
         answer_parts: list[str] = []
+        error = None
         try:
+            yield event("sources", {
+                "sources": sources,
+                "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": len(sources)},
+                "user_message_id": user_message["id"],
+                "trace_id": trace_id,
+            })
+            if not sources:
+                trace_status = "no_answer"
+                answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
+                answer_parts.append(answer)
+                assistant_message = save_message(conversation_id, "assistant", answer, [])
+                yield event("token", {"content": answer})
+                yield event("done", {"assistant_message_id": assistant_message["id"], "trace_id": trace_id})
+                return
+
+            model_started = time.perf_counter()
             async for token in stream_answer(messages, request.model_settings):
+                if first_token_ms is None:
+                    first_token_ms = (time.perf_counter() - model_started) * 1000
                 answer_parts.append(token)
                 yield event("token", {"content": token})
             answer = "".join(answer_parts)
             assistant_message = save_message(conversation_id, "assistant", answer, sources)
-            yield event("done", {"assistant_message_id": assistant_message["id"]})
-        except Exception:
+            trace_status = "success"
+            yield event("done", {"assistant_message_id": assistant_message["id"], "trace_id": trace_id})
+        except Exception as caught:
+            error = caught
+            trace_status = "error"
             logger.exception("Conversation streaming response failed")
-            yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。"})
+            yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。", "trace_id": trace_id})
+        finally:
+            model_duration = (time.perf_counter() - model_started) * 1000 if model_started is not None else None
+            record_trace(
+                trace_id=trace_id, session_id=session["id"], conversation_id=conversation_id,
+                endpoint="conversation_stream", status=trace_status,
+                total_duration_ms=(time.perf_counter() - trace_started) * 1000,
+                requested_mode=trace_context.get("requested_mode"),
+                effective_mode=trace_context.get("effective_mode"),
+                fallback_reason=trace_context.get("fallback_reason"),
+                reranker_status=trace_context.get("reranker_status"),
+                retrieved_chunks=trace_context.get("retrieved_chunks", []),
+                model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
+                retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
+                model_duration_ms=model_duration, first_token_ms=first_token_ms,
+                input_chars=len(request.query), output_chars=sum(len(part) for part in answer_parts),
+                error_type=type(error).__name__ if error else None,
+            )
 
     return StreamingResponse(
         event_stream(),
@@ -418,25 +496,118 @@ async def conversation_chat_stream(
 
 @app.post("/chat", tags=["chat"])
 async def chat(request: ChatRequest, session: dict = Depends(require_session)) -> dict:
-    messages, sources = await _retrieve_for_chat(request, session["id"])
-    if not sources:
-        return {
-            "answer": "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。",
-            "sources": [],
-            "retrieval": {"mode": "hybrid", "result_count": 0},
-        }
+    trace_id = new_trace_id()
+    trace_started = time.perf_counter()
+    trace_context: dict = {}
+    model_started = None
     try:
+        messages, sources = await _retrieve_for_chat(request, session["id"], trace_context=trace_context)
+        if not sources:
+            answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
+            record_trace(
+                trace_id=trace_id, session_id=session["id"], endpoint="chat", status="no_answer",
+                total_duration_ms=(time.perf_counter() - trace_started) * 1000,
+                requested_mode=trace_context.get("requested_mode"), effective_mode=trace_context.get("effective_mode"),
+                fallback_reason=trace_context.get("fallback_reason"), reranker_status=trace_context.get("reranker_status"),
+                retrieved_chunks=[], model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
+                retrieval_duration_ms=trace_context.get("retrieval_duration_ms"), input_chars=len(request.query),
+            )
+            return {"answer": answer, "sources": [], "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": 0}, "trace_id": trace_id}
+
+        model_started = time.perf_counter()
         answer = await generate_answer(messages, request.model_settings)
+        record_trace(
+            trace_id=trace_id, session_id=session["id"], endpoint="chat", status="success",
+            total_duration_ms=(time.perf_counter() - trace_started) * 1000,
+            requested_mode=trace_context.get("requested_mode"), effective_mode=trace_context.get("effective_mode"),
+            fallback_reason=trace_context.get("fallback_reason"), reranker_status=trace_context.get("reranker_status"),
+            retrieved_chunks=trace_context.get("retrieved_chunks", []),
+            model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
+            retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
+            model_duration_ms=(time.perf_counter() - model_started) * 1000,
+            input_chars=len(request.query), output_chars=len(answer),
+        )
+        return {"answer": answer, "sources": sources, "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": len(sources)}, "trace_id": trace_id}
+    except HTTPException:
+        raise
     except Exception as error:
+        record_trace(
+            trace_id=trace_id, session_id=session["id"], endpoint="chat", status="error",
+            total_duration_ms=(time.perf_counter() - trace_started) * 1000,
+            requested_mode=trace_context.get("requested_mode"), effective_mode=trace_context.get("effective_mode"),
+            fallback_reason=trace_context.get("fallback_reason"), reranker_status=trace_context.get("reranker_status"),
+            retrieved_chunks=trace_context.get("retrieved_chunks", []),
+            model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
+            retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
+            model_duration_ms=(time.perf_counter() - model_started) * 1000 if model_started else None,
+            input_chars=len(request.query), error_type=type(error).__name__,
+        )
         raise HTTPException(status_code=502, detail="LLM provider request failed.") from error
-    return {
-        "answer": answer,
-        "sources": sources,
-        "retrieval": {"mode": "hybrid", "result_count": len(sources)},
-    }
 
 
 @app.post("/chat/stream", tags=["chat"])
+async def chat_stream(request: ChatRequest, session: dict = Depends(require_session)):
+    trace_id = new_trace_id()
+    trace_started = time.perf_counter()
+    trace_context: dict = {}
+    messages, sources = await _retrieve_for_chat(request, session["id"], trace_context=trace_context)
+
+    async def event_stream():
+        def event(name: str, payload: dict) -> str:
+            return f"event: {name}\\ndata: {json.dumps(payload, ensure_ascii=False)}\\n\\n"
+
+        trace_status = "cancelled"
+        model_started = None
+        first_token_ms = None
+        output_chars = 0
+        error = None
+        try:
+            yield event("sources", {
+                "sources": sources,
+                "retrieval": {"mode": trace_context.get("effective_mode", "hybrid"), "result_count": len(sources)},
+                "trace_id": trace_id,
+            })
+            if not sources:
+                trace_status = "no_answer"
+                answer = "我暂时无法从知识库检索到相关资料，因此没有足够依据回答这个问题。请尝试换一种问法，或先上传相关文档。"
+                output_chars = len(answer)
+                yield event("token", {"content": answer})
+                yield event("done", {"trace_id": trace_id})
+                return
+
+            model_started = time.perf_counter()
+            async for token in stream_answer(messages, request.model_settings):
+                if first_token_ms is None:
+                    first_token_ms = (time.perf_counter() - model_started) * 1000
+                output_chars += len(token)
+                yield event("token", {"content": token})
+            trace_status = "success"
+            yield event("done", {"trace_id": trace_id})
+        except Exception as caught:
+            error = caught
+            trace_status = "error"
+            logger.exception("LLM streaming response failed")
+            yield event("error", {"message": "LLM 流式生成失败，请检查模型服务配置后重试。", "trace_id": trace_id})
+        finally:
+            record_trace(
+                trace_id=trace_id, session_id=session["id"], endpoint="chat_stream", status=trace_status,
+                total_duration_ms=(time.perf_counter() - trace_started) * 1000,
+                requested_mode=trace_context.get("requested_mode"), effective_mode=trace_context.get("effective_mode"),
+                fallback_reason=trace_context.get("fallback_reason"), reranker_status=trace_context.get("reranker_status"),
+                retrieved_chunks=trace_context.get("retrieved_chunks", []),
+                model_name=request.model_settings.model if request.model_settings else os.getenv("LLM_MODEL"),
+                retrieval_duration_ms=trace_context.get("retrieval_duration_ms"),
+                model_duration_ms=(time.perf_counter() - model_started) * 1000 if model_started else None,
+                first_token_ms=first_token_ms, input_chars=len(request.query), output_chars=output_chars,
+                error_type=type(error).__name__ if error else None,
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 async def chat_stream(request: ChatRequest, session: dict = Depends(require_session)):
     messages, sources = await _retrieve_for_chat(request, session["id"])
 
