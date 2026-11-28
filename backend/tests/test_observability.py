@@ -52,7 +52,7 @@ def test_trace_storage_is_session_scoped_and_excludes_content(tmp_path, monkeypa
         output_chars=42,
         question="PRIVATE QUESTION",
         answer="PRIVATE ANSWER",
-        sources=[{"filename": "policy.txt", "chunk_index": 2}],
+        sources=[{"filename": "policy.txt", "chunk_index": 2, "content": "SOURCE TEXT MUST NOT BE COPIED"}],
     )
 
     trace = observability_service.get_trace(trace_id, owner["session_id"])
@@ -60,7 +60,8 @@ def test_trace_storage_is_session_scoped_and_excludes_content(tmp_path, monkeypa
     assert trace["effective_mode"] == "keyword_fallback"
     assert trace["question"] == "PRIVATE QUESTION"
     assert trace["answer"] == "PRIVATE ANSWER"
-    assert trace["sources"] == [{"filename": "policy.txt", "chunk_index": 2}]
+    assert trace["sources"] == [{"id": None, "chunk_id": "", "document_id": "", "filename": "policy.txt", "chunk_index": 2, "score": None, "rerank_score": None}]
+    assert "content" not in trace["sources"][0]
     assert trace["diagnostic_chunks"] == []
     assert trace["retrieved_chunks"][0]["chunk_id"] == "chunk-1"
     assert "content" not in trace["retrieved_chunks"][0]
