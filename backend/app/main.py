@@ -25,6 +25,7 @@ from app.services.llm_service import (
     generate_answer,
     llm_configured,
     stream_answer,
+    summarize_conversation,
     validate_model_config,
 )
 from app.schemas.session import SessionResponse
@@ -34,6 +35,7 @@ from app.services.security_audit_service import audit_security_event
 from app.services.conversation_service import (
     initialize_conversations, create_conversation, get_conversation, list_conversations,
     save_message, list_messages, recent_history, delete_conversation, cleanup_session_conversations,
+    get_conversation_memory, messages_to_summarize, save_conversation_summary,
 )
 
 
@@ -215,15 +217,32 @@ async def search(request: SearchRequest, session: dict = Depends(require_session
         raise HTTPException(status_code=400, detail=str(error)) from error
 
 
-async def _retrieve_for_chat(request: ChatRequest, session_id: str, history: list[dict] | None = None) -> tuple[list[dict], list[dict]]:
+async def _retrieve_for_chat(request: ChatRequest, session_id: str, history: list[dict] | None = None, summary: str | None = None) -> tuple[list[dict], list[dict]]:
     if not llm_configured(request.model_settings):
         raise HTTPException(status_code=503, detail="Please configure a valid chat model in Model Settings.")
     try:
         retrieval = await search_chunks(request.query, request.limit, "hybrid", request.rerank, session_id)
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
-    messages, sources = build_grounded_messages(request.query, retrieval["results"], history=history)
+    messages, sources = build_grounded_messages(request.query, retrieval["results"], history=history, summary=summary)
     return messages, sources
+
+
+async def _prepare_conversation_summary(conversation_id: str, model_settings=None) -> str:
+    memory = get_conversation_memory(conversation_id)
+    if not llm_configured(model_settings):
+        return memory["summary"]
+    pending = messages_to_summarize(conversation_id, keep_recent=6, batch_limit=20)
+    if not pending:
+        return memory["summary"]
+    try:
+        summary = await summarize_conversation(memory["summary"], pending, model_settings)
+        save_conversation_summary(conversation_id, summary, pending[-1]["rowid"])
+        return summary
+    except Exception:
+        # Summary is an optimization: never block a normal chat turn if summarization fails.
+        logger.warning("Conversation summary update failed; using the previous summary", exc_info=True)
+        return memory["summary"]
 
 
 
@@ -292,8 +311,9 @@ async def conversation_chat_stream(
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query must not be empty.")
 
-    history = recent_history(conversation_id, limit=8)
-    messages, sources = await _retrieve_for_chat(request, session["id"], history=history)
+    summary = await _prepare_conversation_summary(conversation_id, request.model_settings)
+    history = recent_history(conversation_id, limit=6)
+    messages, sources = await _retrieve_for_chat(request, session["id"], history=history, summary=summary)
     user_message = save_message(conversation_id, "user", request.query.strip())
 
     async def event_stream():

@@ -47,6 +47,14 @@ def initialize_conversations() -> None:
         """)
         connection.execute("CREATE INDEX IF NOT EXISTS idx_conversations_session_updated ON conversations(session_id, updated_at)")
         connection.execute("CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at)")
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_memory (
+                conversation_id TEXT PRIMARY KEY,
+                summary TEXT NOT NULL DEFAULT '',
+                last_summarized_rowid INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            )
+        """)
 
 
 def create_conversation(session_id: str, title: str | None = None) -> dict:
@@ -144,6 +152,61 @@ def recent_history(conversation_id: str, limit: int = 8) -> list[dict]:
     return [dict(row) for row in reversed(rows)]
 
 
+
+def get_conversation_memory(conversation_id: str) -> dict:
+    initialize_conversations()
+    with _connect() as connection:
+        row = connection.execute(
+            "SELECT summary, last_summarized_rowid FROM conversation_memory WHERE conversation_id = ?",
+            (conversation_id,),
+        ).fetchone()
+    if row is None:
+        return {"summary": "", "last_summarized_rowid": 0}
+    return dict(row)
+
+
+def messages_to_summarize(
+    conversation_id: str, keep_recent: int = 6, batch_limit: int = 20
+) -> list[dict]:
+    """Return older, not-yet-summarized messages, leaving the recent window untouched."""
+    initialize_conversations()
+    keep_recent = max(1, min(keep_recent, 20))
+    batch_limit = max(1, min(batch_limit, 50))
+    memory = get_conversation_memory(conversation_id)
+    with _connect() as connection:
+        cutoff = connection.execute(
+            "SELECT rowid FROM messages WHERE conversation_id = ? ORDER BY rowid DESC LIMIT 1 OFFSET ?",
+            (conversation_id, keep_recent - 1),
+        ).fetchone()
+        if cutoff is None:
+            return []
+        rows = connection.execute(
+            """
+            SELECT rowid, role, content FROM messages
+            WHERE conversation_id = ? AND rowid > ? AND rowid < ?
+            ORDER BY rowid LIMIT ?
+            """,
+            (conversation_id, memory["last_summarized_rowid"], cutoff["rowid"], batch_limit),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def save_conversation_summary(conversation_id: str, summary: str, through_rowid: int) -> None:
+    initialize_conversations()
+    with _connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO conversation_memory
+                (conversation_id, summary, last_summarized_rowid, updated_at)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(conversation_id) DO UPDATE SET
+                summary = excluded.summary,
+                last_summarized_rowid = MAX(conversation_memory.last_summarized_rowid, excluded.last_summarized_rowid),
+                updated_at = excluded.updated_at
+            """,
+            (conversation_id, summary[:3000], through_rowid, _now()),
+        )
+
 def delete_conversation(conversation_id: str, session_id: str) -> bool:
     initialize_conversations()
     with _connect() as connection:
@@ -154,6 +217,7 @@ def delete_conversation(conversation_id: str, session_id: str) -> bool:
         if row is None:
             return False
         connection.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
+        connection.execute("DELETE FROM conversation_memory WHERE conversation_id = ?", (conversation_id,))
         connection.execute("DELETE FROM conversations WHERE id = ? AND session_id = ?", (conversation_id, session_id))
     return True
 
@@ -166,6 +230,10 @@ def cleanup_session_conversations(session_ids: list[str]) -> int:
     with _connect() as connection:
         connection.execute(
             f"DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE session_id IN ({placeholders}))",
+            session_ids,
+        )
+        connection.execute(
+            f"DELETE FROM conversation_memory WHERE conversation_id IN (SELECT id FROM conversations WHERE session_id IN ({placeholders}))",
             session_ids,
         )
         cursor = connection.execute(
