@@ -1,8 +1,36 @@
 # Enterprise Knowledge Agent — Project Context
 
-> Last verified: 2026-11-27 (Asia/Taipei), 19:35  
+> Last verified: 2026-11-28 (Asia/Taipei)  
 > Purpose: durable handover document for continuing work across ChatGPT conversations.  
 > Rule: distinguish verified repository facts, user-reported deployment state, and pending verification. Never infer a deployment from a merge or CI pass.
+
+## Current status — verified 2026-11-28 (supersedes historical next-action notes)
+
+### Repository state and recent delivery
+
+- Latest `main` HEAD at this check: `0101185aaef729b218d2e6611aa6f5968e73cf97`, merge commit for PR #9 (`fix: improve mobile navigation and H5 layout`). No newer commit was present on `main` at the time of this check.
+- PR #7 (backend conversation persistence and streaming chat), PR #8 (conversation-based chat UI), and PR #9 (mobile navigation / H5 layout) are merged into `main`. Their corresponding main commits are `3d111443c6e85670202fb78ec43ebed6e0ddba91`, `d19a513e21c5ff301dea8a62dd7a2702a762b82d`, and `0101185aaef729b218d2e6611aa6f5968e73cf97`.
+- User-confirmed product state on 2026-11-27: PC chat page and chat interaction worked; H5 layout/navigation interaction was also confirmed usable after the mobile drawer adaptation. This is user-confirmed runtime behavior, not independent production deployment verification.
+- Repository CI runs for the merged backend conversation work, chat UI, and H5 navigation commits all completed successfully: `45994164898`, `45997225402`, and `46003015497`; corresponding PR CI runs `45993209235`, `45994624916`, and `46000857292` also succeeded.
+- PR #10, “feat: add rolling conversation summary memory”, is currently open (not merged). It is four commits ahead of `main`, changes only backend conversation/context services and conversation tests, and proposes incrementally summarizing older messages while retaining the latest six raw messages. Its PR CI run `46009069984` completed successfully. Do not describe this summary-memory enhancement as merged or deployed.
+- The current PR inventory includes open PR #10; PRs #1–#9 are closed. This supersedes earlier historical statements that no PR was open.
+- The current-main CI run `46003015497` for `0101185` completed successfully. This does not establish Render deployment state.
+
+### Conversation feature status
+
+- **Repository-verified / merged:** backend conversation persistence, session-scoped conversation APIs, bounded conversation context in grounded prompts, streaming chat, conversation-based chat UI, conversation history, per-message sources, and responsive/mobile navigation changes are on `main`.
+- **User-confirmed:** PC chat interaction and H5 navigation/layout were exercised and confirmed working in the 2026-11-27 conversation.
+- **Pending PR review/merge:** rolling conversation summary memory is proposed in PR #10; latest-six-message retention and summary fallback are PR-described behavior, not yet part of `main`.
+- **Still to validate:** multi-turn follow-up quality across long conversations; whether summary memory preserves critical facts when PR #10 is merged; new-conversation and cross-session isolation; page-refresh/history restoration; per-turn citation correctness; streaming stop/error recovery.
+- **Deployment boundary:** PR merges and green CI do not prove that Render is running these commits. No Render deployment SHA was independently verified in this archive check.
+
+### Updated next actions
+
+1. Review PR #10's implementation and test coverage; merge only through the normal explicit approval process. Do not include its proposed summary-memory feature in the current-main capability list until merged.
+2. Run focused multi-turn acceptance tests on the current deployed version: contextual follow-up, topic switch, new conversation isolation, session isolation, history restoration, and per-message citations.
+3. If PR #10 is merged, separately test long-conversation summarization, retention of key constraints/facts, summary update progression, and graceful fallback when summarization fails.
+4. Verify the Render deployment commit before attributing repository changes or test results to the live application.
+5. Continue product-quality work only after the above checks; the chat UI, backend conversation persistence/streaming, and H5 navigation are no longer feature-development backlog items.
 
 ## 1. Project goal
 
