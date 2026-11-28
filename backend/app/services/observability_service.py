@@ -112,6 +112,21 @@ def _safe_chunks(chunks: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     return safe
 
 
+def _safe_sources(sources: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    safe: list[dict[str, Any]] = []
+    for item in (sources or [])[:20]:
+        safe.append({
+            "id": item.get("id"),
+            "chunk_id": str(item.get("chunk_id", ""))[:80],
+            "document_id": str(item.get("document_id", ""))[:80],
+            "filename": str(item.get("filename", ""))[:255],
+            "chunk_index": item.get("chunk_index"),
+            "score": item.get("score"),
+            "rerank_score": item.get("rerank_score"),
+        })
+    return safe
+
+
 def record_trace(
     *,
     trace_id: str,
@@ -160,7 +175,7 @@ def record_trace(
                 max(0.0, float(total_duration_ms)), max(0, int(input_chars)),
                 max(0, int(output_chars)), (error_type or "")[:128] or None,
                 (question or "")[:2000] or None, (answer or "")[:20000] or None,
-                json.dumps((sources or [])[:20], ensure_ascii=False),
+                json.dumps(_safe_sources(sources), ensure_ascii=False),
                 json.dumps(chunks if os.getenv("TRACE_CAPTURE_CHUNK_TEXT", "false").lower() in {"1", "true", "yes", "on"} else [], ensure_ascii=False),
                 _now(),
             ))
