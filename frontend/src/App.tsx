@@ -2,7 +2,7 @@ import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } fr
 import {
   Bot, FileText, ShieldCheck, Sparkles, Upload, CheckCircle2, Loader2,
   AlertCircle, Search, Send, BookOpen, Settings, Plus, Trash2, Square,
-  MessageSquare, PanelLeftClose, PanelLeftOpen, Menu,
+  MessageSquare, PanelLeftClose, PanelLeftOpen, Menu, RefreshCw,
 } from "lucide-react";
 import { readSSEStream } from "./services/stream";
 import ChatMessage from "./components/chat/ChatMessage";
@@ -42,6 +42,8 @@ export default function App() {
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [uploading, setUploading] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [reindexingDocumentId, setReindexingDocumentId] = useState<string | null>(null);
+  const [deletingDocumentId, setDeletingDocumentId] = useState<string | null>(null);
   const [rerankEnabled, setRerankEnabled] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [comparison, setComparison] = useState<ComparisonResult[]>([]);
@@ -255,6 +257,34 @@ export default function App() {
     finally { setReindexing(false); }
   };
 
+  const handleDocumentReindex = async (document: KnowledgeDocument) => {
+    setReindexingDocumentId(document.id); setPageMessage(""); setPageError("");
+    try {
+      const response = await apiFetch("/documents/" + encodeURIComponent(document.id) + "/reindex", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "单份文档重新索引失败");
+      await loadDocuments();
+      if (result.status === "failed") setPageError("文档索引失败：" + document.filename + "。原因：" + (result.error || "未知错误") + "；原有向量已保留。");
+      else setPageMessage("已完成重新索引：" + document.filename + "，共 " + result.embedded_chunk_count + " 个向量。");
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "单份文档重新索引失败");
+    } finally { setReindexingDocumentId(null); }
+  };
+
+  const handleDeleteDocument = async (document: KnowledgeDocument) => {
+    if (!window.confirm("确定删除文档「" + document.filename + "」及其全部文本片段和向量吗？此操作不可撤销。")) return;
+    setDeletingDocumentId(document.id); setPageMessage(""); setPageError("");
+    try {
+      const response = await apiFetch("/documents/" + encodeURIComponent(document.id), { method: "DELETE" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || "删除文档失败");
+      await loadDocuments();
+      setPageMessage("已删除文档：" + document.filename);
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "删除文档失败");
+    } finally { setDeletingDocumentId(null); }
+  };
+
   const handleSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!searchQuery.trim()) return;
@@ -400,13 +430,34 @@ export default function App() {
         </button>
         {pageMessage && <div className="notice success"><CheckCircle2 size={16} />{pageMessage}</div>}
         {pageError && <div className="notice error"><AlertCircle size={16} />{pageError}</div>}
-        <div className="section-heading document-heading"><div><h3>已上传文档</h3><p>{documents.length} 个文件</p></div><button type="button" onClick={handleReindex} disabled={reindexing || documents.length === 0}>{reindexing ? "正在生成向量…" : "重新生成向量"}</button></div>
+        <section className="knowledge-stats" aria-label="知识库统计">
+          <article className="knowledge-stat"><span>文档总数</span><strong>{documents.length}</strong></article>
+          <article className="knowledge-stat"><span>文本片段</span><strong>{documents.reduce((total, item) => total + item.chunk_count, 0)}</strong></article>
+          <article className="knowledge-stat"><span>已建立向量</span><strong>{documents.reduce((total, item) => total + item.embedded_chunk_count, 0)}</strong></article>
+          <article className="knowledge-stat"><span>待完善索引</span><strong>{documents.filter(item => item.chunk_count === 0 || item.embedded_chunk_count < item.chunk_count).length}</strong></article>
+        </section>
+        <div className="section-heading document-heading"><div><h3>已上传文档</h3><p>{documents.length} 个文件</p></div><button type="button" onClick={handleReindex} disabled={reindexing || documents.length === 0}>{reindexing ? "正在生成向量…" : "全部重新索引"}</button></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
-          <div className="document-list">{documents.map(document => <article className="document-row" key={document.id}>
-            <div className="file-icon"><FileText size={19} /></div>
-            <div className="file-info"><strong>{document.filename}</strong><span>{formatSize(document.size)} · {document.character_count.toLocaleString()} 字符 · {document.chunk_count} 个片段 · {document.embedded_chunk_count} 个向量</span></div>
-            <span className="ready"><CheckCircle2 size={14} />{document.embedded_chunk_count > 0 ? "向量已索引" : "文本已分块"}</span>
-          </article>)}</div>}
+          <div className="document-list">{documents.map(document => {
+            const fullyIndexed = document.chunk_count > 0 && document.embedded_chunk_count === document.chunk_count;
+            const indexLabel = fullyIndexed ? "向量已索引" : document.embedded_chunk_count > 0 ? "部分索引" : "待建立向量";
+            return <article className="document-row" key={document.id}>
+              <div className="file-icon"><FileText size={19} /></div>
+              <div className="file-info">
+                <strong>{document.filename}</strong>
+                <span>{formatSize(document.size)} · {document.character_count.toLocaleString()} 字符 · {document.chunk_count} 个片段 · {document.embedded_chunk_count} 个向量</span>
+                <span className="document-status"><CheckCircle2 size={13} />解析完成 · {indexLabel}</span>
+              </div>
+              <div className="document-actions">
+                <button type="button" title="重新索引此文档" aria-label={"重新索引 " + document.filename} disabled={reindexing || reindexingDocumentId !== null || deletingDocumentId !== null} onClick={() => handleDocumentReindex(document)}>
+                  {reindexingDocumentId === document.id ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}<span>重新索引</span>
+                </button>
+                <button type="button" className="document-delete" title="删除文档" aria-label={"删除 " + document.filename} disabled={reindexingDocumentId !== null || deletingDocumentId !== null} onClick={() => handleDeleteDocument(document)}>
+                  {deletingDocumentId === document.id ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}<span>删除</span>
+                </button>
+              </div>
+            </article>;
+          })}</div>}
         <section className="search-section">
           <div className="section-heading"><div><h3>三种检索策略对比</h3><p>对比关键词、向量语义和混合检索结果。</p></div></div>
           <form className="search-form" onSubmit={handleSearch}><Search size={18} /><input value={searchQuery} onChange={event => setSearchQuery(event.target.value)} placeholder="输入用于检索对比的问题…" /><button type="submit" disabled={searching || !searchQuery.trim()}>{searching ? "对比中…" : "同时检索"}</button></form>
