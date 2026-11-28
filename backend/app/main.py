@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from app.schemas.model_config import ModelConfig, ModelTestResponse
+from app.admin_routes import router as admin_router
 
 from app.services.document_service import (
     get_document_text,
@@ -72,6 +73,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.include_router(admin_router)
 
 
 class SearchRequest(BaseModel):
