@@ -465,8 +465,7 @@ async def upload_zip_documents(file: UploadFile, session_id: str) -> dict:
             name = parts[-1]
             extension = Path(name).suffix.lower()
             if extension == ".zip":
-                skipped.append({"filename": name, "reason": "Nested ZIP archives are not supported."})
-                continue
+                raise ValueError("Nested ZIP archives are not supported.")
             if extension not in ALLOWED_EXTENSIONS:
                 skipped.append({"filename": name, "reason": "Unsupported file type."})
                 continue
