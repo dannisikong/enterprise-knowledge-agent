@@ -436,7 +436,7 @@ export default function App() {
           <article className="knowledge-stat"><span>已建立向量</span><strong>{documents.reduce((total, item) => total + item.embedded_chunk_count, 0)}</strong></article>
           <article className="knowledge-stat"><span>待完善索引</span><strong>{documents.filter(item => item.chunk_count === 0 || item.embedded_chunk_count < item.chunk_count).length}</strong></article>
         </section>
-        <div className="section-heading document-heading"><div><h3>已上传文档</h3><p>{documents.length} 个文件</p></div><button type="button" onClick={handleReindex} disabled={reindexing || documents.length === 0}>{reindexing ? "正在生成向量…" : "全部重新索引"}</button></div>
+        <div className="section-heading document-heading"><div><h3>已上传文档</h3><p>{documents.length} 个文件</p></div><button type="button" onClick={handleReindex} disabled={reindexing || reindexingDocumentId !== null || deletingDocumentId !== null || documents.length === 0}>{reindexing ? "正在生成向量…" : "全部重新索引"}</button></div>
         {documents.length === 0 ? <div className="empty-state"><FileText size={23} /><span>还没有文档，上传一份资料开始构建知识库</span></div> :
           <div className="document-list">{documents.map(document => {
             const fullyIndexed = document.chunk_count > 0 && document.embedded_chunk_count === document.chunk_count;
@@ -452,7 +452,7 @@ export default function App() {
                 <button type="button" title="重新索引此文档" aria-label={"重新索引 " + document.filename} disabled={reindexing || reindexingDocumentId !== null || deletingDocumentId !== null} onClick={() => handleDocumentReindex(document)}>
                   {reindexingDocumentId === document.id ? <Loader2 className="spin" size={15} /> : <RefreshCw size={15} />}<span>重新索引</span>
                 </button>
-                <button type="button" className="document-delete" title="删除文档" aria-label={"删除 " + document.filename} disabled={reindexingDocumentId !== null || deletingDocumentId !== null} onClick={() => handleDeleteDocument(document)}>
+                <button type="button" className="document-delete" title="删除文档" aria-label={"删除 " + document.filename} disabled={reindexing || reindexingDocumentId !== null || deletingDocumentId !== null} onClick={() => handleDeleteDocument(document)}>
                   {deletingDocumentId === document.id ? <Loader2 className="spin" size={15} /> : <Trash2 size={15} />}<span>删除</span>
                 </button>
               </div>
