@@ -57,3 +57,13 @@ All entries are concise handover snapshots. This is not a raw chat transcript.
 - Found PR #10, “feat: add rolling conversation summary memory”, still open and four commits ahead of main. Its PR CI run `46009069984` succeeded. The proposal summarizes older conversation messages while retaining the latest six raw messages; it is not merged and must not be treated as a main-branch or deployed capability.
 - Updated current priorities: review PR #10; validate multi-turn follow-ups, long-context behavior, session/conversation isolation, history restoration, and per-message citations. Chat UI, backend conversation support, and H5 navigation are no longer listed as features awaiting initial implementation.
 - No application code, workflow, configuration, branch protection, secrets, or Render settings were changed. Only the two authorized project archive files were updated.
+
+
+## 2026-11-28 evening — document, conversation, and observability milestones
+
+- Re-checked GitHub main and PRs: latest main HEAD is `5ea1833f601b018c922cd3c62ace9edb79235181`, the PR #15 merge commit. PRs #10–#15 are merged; PRs #1–#15 are closed and no open PR was returned.
+- Recorded newly merged repository capabilities: PR #10 rolling conversation summary memory; #11 secure ZIP batch upload; #12 document management; #13 session-scoped RAG request tracing; #14 trace diagnostics and answer feedback; #15 secure admin observability APIs.
+- Verified successful main CI runs for merges #11–#15: `46124754123`, `46126046945`, `46145701775`, `46146805050`, and `46147364491`. Final PR CI runs for #10–#15 also succeeded. Some intermediate PR commits had failed checks before fixes; final PR and main checks passed.
+- Clarified that the new capabilities are repository-verified only. No Render deployment SHA or user confirmation of deployment of today's features was available in this check.
+- Updated next validation priorities: ZIP/document lifecycle and concurrency; trace correctness, privacy, isolation and retention; admin auth/authorization; long-context summary quality; and confirmation of whether an admin observability frontend view exists.
+- No application code, workflows, configuration, branch protection, secrets, or Render settings were modified. Only the two authorized archive files were updated.
