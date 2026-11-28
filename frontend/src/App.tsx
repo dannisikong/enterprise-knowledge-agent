@@ -221,10 +221,22 @@ export default function App() {
     setUploading(true); setPageMessage(""); setPageError("");
     const body = new FormData(); body.append("file", file);
     try {
-      const response = await apiFetch("/documents", { method: "POST", body });
+      const isZip = file.name.toLowerCase().endsWith(".zip");
+      const response = await apiFetch(isZip ? "/documents/archive" : "/documents", { method: "POST", body });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || "上传失败");
-      setPageMessage("已完成解析与分块：" + result.filename + "，共 " + result.chunk_count + " 个文本块；向量状态：" + (result.embedding_status === "indexed" ? "已建立" : "待配置 Embedding API"));
+      if (isZip) {
+        const details = [
+          "ZIP 批量导入完成：成功 " + result.uploaded_count + " 份",
+          "失败 " + result.failed_count + " 份",
+          "跳过 " + result.skipped_count + " 份",
+        ];
+        const issues = [...(result.failed || []).map((item: { filename: string; error: string }) => item.filename + "：" + item.error),
+          ...(result.skipped || []).map((item: { filename: string; reason: string }) => item.filename + "：" + item.reason)];
+        setPageMessage(details.join("，") + (issues.length ? "。\n" + issues.join("\n") : ""));
+      } else {
+        setPageMessage("已完成解析与分块：" + result.filename + "，共 " + result.chunk_count + " 个文本块；向量状态：" + (result.embedding_status === "indexed" ? "已建立" : "待配置 Embedding API"));
+      }
       await loadDocuments();
     } catch (error) {
       setPageError(error instanceof Error ? error.message : "上传失败，请重试。");
@@ -380,11 +392,11 @@ export default function App() {
         <div className="composer-hint">AI 回答仅以当前检索到的企业文档为依据；历史消息用于理解上下文，不作为事实来源。</div>
       </section> : <section className="documents-workspace">
         <div className="section-heading"><div><h2>知识库文档</h2><p>上传企业资料，构建可检索的知识库。</p></div></div>
-        <input ref={uploadRef} className="hidden-input" type="file" accept=".pdf,.docx,.txt,.md" onChange={handleUpload} />
+        <input ref={uploadRef} className="hidden-input" type="file" accept=".pdf,.docx,.txt,.md,.zip" onChange={handleUpload} />
         <button className="upload-box" onClick={() => uploadRef.current?.click()} disabled={uploading}>
           {uploading ? <Loader2 className="spin" size={20} /> : <Upload size={20} />}
           <span>{uploading ? "正在上传、解析与分块…" : "选择文件，上传到知识库"}</span>
-          <small>支持 PDF、DOCX、TXT、Markdown，单个文件最大 10 MB</small>
+          <small>支持 PDF、DOCX、TXT、Markdown；ZIP 可批量导入（最大 10 MB，最多 50 份文档）</small>
         </button>
         {pageMessage && <div className="notice success"><CheckCircle2 size={16} />{pageMessage}</div>}
         {pageError && <div className="notice error"><AlertCircle size={16} />{pageError}</div>}
