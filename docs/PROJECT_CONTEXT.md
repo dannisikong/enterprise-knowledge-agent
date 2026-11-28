@@ -32,6 +32,52 @@
 4. Verify the Render deployment commit before attributing repository changes or test results to the live application.
 5. Continue product-quality work only after the above checks; the chat UI, backend conversation persistence/streaming, and H5 navigation are no longer feature-development backlog items.
 
+## Current status — verified 2026-11-28 evening (supersedes older status and next-action sections)
+
+### Main branch and PR delivery
+
+- Latest `main` HEAD at this check: `5ea1833f601b018c922cd3c62ace9edb79235181` (PR #15 merge commit, “feat: add secure admin observability APIs”).
+- PRs #10–#15 are now merged; PRs #1–#15 are closed and no open PR was returned by the GitHub PR listing:
+  - #10 rolling conversation summary memory;
+  - #11 secure ZIP batch document uploads;
+  - #12 document management capabilities;
+  - #13 session-scoped RAG request tracing;
+  - #14 RAG trace diagnostics and answer feedback;
+  - #15 secure admin observability APIs.
+- Today's merged application work is repository-verified. Do not infer that any of it is deployed to Render from merge or CI success.
+- Main-branch CI runs verified successful:
+  - #11 / ZIP upload merge: `46124754123`;
+  - #12 / document management merge: `46126046945`;
+  - #13 / request tracing merge: `46145701775`;
+  - #14 / trace diagnostics and feedback merge: `46146805050`;
+  - #15 / admin observability merge: `46147364491`.
+- PR CI for #10 succeeded (`46009069984`). PR CI for #11 and #12 succeeded (`46124653279`, `46125910487`); PR CI for #13 and #14 succeeded on final reviewed commits (`46138359115`, `46146540629`); PR CI for #15 succeeded (`46147172793`). Some intermediate commits in #11 and #14 had failed CI runs before later fixes; final PR and merged-main checks listed above succeeded.
+- The two archive commits immediately before today's application changes (`75d6a6b`, `7e7d97e`) also passed CI (`46121627219`, `46121629881`).
+- The repository PR list currently shows no open PR. No Render deployment SHA was independently verified in this check.
+
+### Newly merged capabilities (repository-verified)
+
+- **Conversation summary memory (PR #10):** rolling summaries for older conversation messages, retaining the latest six raw messages; summary is used as conversation background rather than enterprise-policy evidence; best-effort fallback behavior is included. This is now merged, unlike the previous archive snapshot that described it as open.
+- **ZIP batch upload (PR #11):** secure batch document upload from ZIP archives.
+- **Document management (PR #12):** document management capabilities, including protection against concurrent maintenance actions.
+- **RAG request tracing (PR #13):** session-scoped trace persistence and instrumentation of chat endpoints; trace storage isolation and cleanup tests were added.
+- **Trace diagnostics and answer feedback (PR #14):** captures question/answer and feedback, persists streamed answer content, and sanitizes trace citation metadata so source chunk text is not exposed by default.
+- **Admin observability APIs (PR #15):** secure admin session authentication, global observability queries, and admin API routes. Treat as repository functionality only; do not expose or record admin credentials or secrets.
+
+### Current product status and next actions
+
+- **Already delivered:** backend conversation persistence/streaming, conversation-based chat UI, H5 navigation/layout, rolling conversation summary memory, ZIP batch uploads, document management, session-scoped RAG tracing, trace diagnostics/answer feedback, and secured admin observability API routes.
+- **User-confirmed runtime status:** on 2026-11-27 the user confirmed PC chat interaction and H5 layout/navigation worked. No newer user confirmation of today's newly merged features or Render deployment is present in this conversation.
+- **Next validation priorities (not yet evidenced as completed):**
+  1. Verify the deployed Render commit before attributing new main-branch features to the live application.
+  2. Exercise ZIP upload edge cases and document management lifecycle/concurrency behavior.
+  3. Inspect trace records end-to-end: correct question/answer persistence, citations, feedback, session isolation, retention/cleanup, and absence of raw chunk text in default diagnostic output.
+  4. Validate admin authentication, authorization boundaries, query scoping, and safe observability output without recording credentials.
+  5. Test long multi-turn conversations and summary quality: preserve key constraints, follow-up references, and grounding; ensure summary failures do not block chat.
+  6. Confirm the observability UI/view is available and usable only if a frontend view is part of the intended scope; PR #15 title and API implementation alone do not prove a visual dashboard exists.
+- **Deployment status:** pending verification. CI success and merged PRs establish repository checks, not Render deployment.
+- **Archive scope:** this recurring maintenance updated only `docs/PROJECT_CONTEXT.md` and `docs/CHANGELOG.md`; no application code, workflow, configuration, branch protection, secrets, or Render settings were changed.
+
 ## 1. Project goal
 
 Build an enterprise knowledge-base assistant (RAG / AI Agent application) as a practical portfolio project for transitioning into AI Agent application development. The focus is a credible end-to-end demo: ingestion, retrieval, grounded answers, citations, evaluation, security, and deployability.
