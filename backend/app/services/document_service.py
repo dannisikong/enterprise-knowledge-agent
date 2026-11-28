@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from io import BytesIO
 import math
 import os
 import re
@@ -12,6 +13,7 @@ from uuid import uuid4
 
 from docx import Document as DocxDocument
 from fastapi import UploadFile
+from starlette.datastructures import Headers
 from pypdf import PdfReader
 
 from app.services.chunking import split_text
@@ -418,3 +420,97 @@ def cleanup_session_documents(session_ids: list[str]) -> int:
                 connection.execute("DELETE FROM documents WHERE id = ?", (document_id,))
                 deleted += 1
     return deleted
+
+
+MAX_ZIP_FILE_SIZE = 10 * 1024 * 1024
+MAX_ZIP_ENTRIES = 50
+MAX_ZIP_UNCOMPRESSED_SIZE = 50 * 1024 * 1024
+MAX_ZIP_COMPRESSION_RATIO = 100
+
+
+async def upload_zip_documents(file: UploadFile, session_id: str) -> dict:
+    """Safely import supported documents from one ZIP as independent documents."""
+    raw = await file.read(MAX_ZIP_FILE_SIZE + 1)
+    if not raw:
+        raise ValueError("The uploaded ZIP file is empty.")
+    if len(raw) > MAX_ZIP_FILE_SIZE:
+        raise ValueError("ZIP file is too large. Maximum size is 10 MB.")
+
+    try:
+        archive = zipfile.ZipFile(BytesIO(raw))
+    except zipfile.BadZipFile as error:
+        raise ValueError("Invalid ZIP archive.") from error
+
+    with archive:
+        entries = archive.infolist()
+        if len(entries) > MAX_ZIP_ENTRIES:
+            raise ValueError(f"ZIP contains too many entries. Maximum is {MAX_ZIP_ENTRIES}.")
+        if any(info.flag_bits & 0x1 for info in entries):
+            raise ValueError("Encrypted ZIP archives are not supported.")
+        total_size = sum(info.file_size for info in entries if not info.is_dir())
+        if total_size > MAX_ZIP_UNCOMPRESSED_SIZE:
+            raise ValueError("ZIP expands beyond the 50 MB processing limit.")
+
+        candidates = []
+        skipped = []
+        for info in entries:
+            if info.is_dir():
+                continue
+            # Reject traversal, absolute paths, Windows drive paths and symbolic links.
+            normalized = info.filename.replace("\\", "/")
+            parts = normalized.split("/")
+            mode = (info.external_attr >> 16) & 0o170000
+            if normalized.startswith("/") or (parts and ":" in parts[0]) or any(part in {"", ".", ".."} for part in parts) or mode == 0o120000:
+                raise ValueError("ZIP contains an unsafe file path or symbolic link.")
+            name = parts[-1]
+            extension = Path(name).suffix.lower()
+            if extension == ".zip":
+                skipped.append({"filename": name, "reason": "Nested ZIP archives are not supported."})
+                continue
+            if extension not in ALLOWED_EXTENSIONS:
+                skipped.append({"filename": name, "reason": "Unsupported file type."})
+                continue
+            if info.file_size > MAX_FILE_SIZE:
+                skipped.append({"filename": name, "reason": "File exceeds the 10 MB per-document limit."})
+                continue
+            if info.file_size and info.file_size / max(info.compress_size, 1) > MAX_ZIP_COMPRESSION_RATIO:
+                raise ValueError("ZIP compression ratio exceeds the safety limit.")
+            candidates.append((info, name))
+
+        if not candidates:
+            return {"total_files": len(entries), "uploaded_count": 0, "failed_count": 0,
+                    "skipped_count": len(skipped), "documents": [], "failed": [], "skipped": skipped}
+
+        uploaded, failed = [], []
+        used_names = set()
+        for info, name in candidates:
+            if name in used_names:
+                failed.append({"filename": name, "error": "Duplicate filename in ZIP."})
+                continue
+            used_names.add(name)
+            try:
+                content = archive.read(info)
+                if len(content) != info.file_size:
+                    raise ValueError("Extracted file size does not match ZIP metadata.")
+                inner_file = UploadFile(
+                    filename=name,
+                    file=BytesIO(content),
+                    headers=Headers({"content-type": "application/octet-stream"}),
+                )
+                uploaded.append(await upload_document(inner_file, session_id))
+            except Exception as error:
+                failed.append({"filename": name, "error": str(error)[:300]})
+            finally:
+                if "inner_file" in locals():
+                    await inner_file.close()
+                    del inner_file
+
+    return {
+        "total_files": len(entries),
+        "uploaded_count": len(uploaded),
+        "failed_count": len(failed),
+        "skipped_count": len(skipped),
+        "documents": uploaded,
+        "failed": failed,
+        "skipped": skipped,
+    }
