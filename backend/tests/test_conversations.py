@@ -97,7 +97,8 @@ def test_streaming_chat_persists_messages_and_sources(tmp_path, monkeypatch):
         assert trace_detail["status"] == "success"
         assert trace_detail["question"] == "年假有几天？"
         assert trace_detail["answer"] == "根据员工手册，年假为五天。[1]"
-        assert trace_detail["sources"] == [source]
+        assert trace_detail["sources"][0]["chunk_id"] == "chunk-1"
+        assert "content" not in trace_detail["sources"][0]
         assert trace_detail["retrieved_chunks"][0]["chunk_id"] == "chunk-1"
         assert "content" not in trace_detail["retrieved_chunks"][0]
         history = client.get(
