@@ -28,7 +28,7 @@ h1 { font-size: 21px; margin: 7px 0 0; font-weight: 600; }
 .upload-box:disabled { opacity: .7; cursor: wait; }
 .upload-box span { font-size: 14px; font-weight: 600; }
 .upload-box small { color: #8593aa; font-size: 11px; font-weight: 400; }
-.notice { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; padding: 10px; border-radius: 8px; margin-top: 12px; }
+.notice { display: flex; justify-content: center; align-items: center; gap: 8px; font-size: 12px; padding: 10px; border-radius: 8px; margin-top: 12px; white-space: pre-line; }
 .notice.success { color: #80d9b2; background: #18352f; }
 .notice.error { color: #ff9a9a; background: #3a242c; }
 .documents-section { max-width: 850px; margin: 7vh auto 0; }
